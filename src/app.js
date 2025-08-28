@@ -1,29 +1,78 @@
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
+
 const express = require('express');
-const { createServer } = require('http');
 const cors = require('cors');
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient()
-
-const userRoute = require('./routes/userRoute');
-const authRoutes = require('./routes/authRoute');
+const fs = require('fs');
 
 const app = express();
-const httpServer = createServer(app);
+const prisma = new PrismaClient();
 
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'],
+  credentials: true,
+}));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoute);
+// Create upload directories if they don't exist
+const uploadDirs = ['uploads', 'uploads/profiles'];
+uploadDirs.forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
 
+// Serve static files
+app.use('/uploads', express.static('uploads'));
 
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({
-      message: 'Something went wrong!',
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined,
-    });
+// Health check
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    message: 'HospitalLink Backend is running',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
   });
+});
 
-module.exports = { app, httpServer };
+// Import routes
+const authRoutes = require('./routes/authRoute');
+const userRoutes = require('./routes/userRoute'); // Pastikan ini ada
+
+// Use routes
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes); // Pastikan ini ada
+
+// API info
+app.get('/api', (req, res) => {
+  res.json({
+    success: true,
+    message: 'HospitalLink API v1.0',
+    endpoints: {
+      health: '/health',
+      auth: '/api/auth',
+      users: '/api/users',
+    },
+  });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.method} ${req.originalUrl} not found`,
+  });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('❌ Error:', err);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal server error',
+  });
+});
+
+module.exports = { app, prisma };

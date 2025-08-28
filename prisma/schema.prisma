@@ -1,8 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// This is your Prisma schema file
+// Single Hospital Platform - Simplified for 2-week development
 
 generator client {
   provider = "prisma-client-js"
@@ -13,17 +10,442 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================================================
+// CORE ENUMS (Simplified)
+// ============================================================================
+
 enum Role {
   USER
   PATIENT
+  DOCTOR
   ADMIN
+  FAMILY_MEMBER
 }
 
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum FamilyRelation {
+  SELF
+  SPOUSE
+  CHILD
+  PARENT
+  GRANDPARENT
+  SIBLING
+  OTHER
+}
+
+enum QueueStatus {
+  WAITING
+  CALLED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+enum PaymentMethod {
+  CASH
+  BPJS
+  INSURANCE
+  CREDIT_CARD
+}
+
+enum NotificationType {
+  QUEUE
+  APPOINTMENT
+  LAB_RESULT
+  PAYMENT
+  SYSTEM
+}
+
+enum NotificationPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// ============================================================================
+// CORE MODELS (Essential untuk 2 minggu)
+// ============================================================================
+
 model User {
-  id            String           @id @default(uuid())
-  email         String           @unique
-  password      String
-  role          Role             @default(USER)
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  id               String    @id @default(uuid())
+  email            String    @unique
+  password         String
+  role             Role      @default(USER)
+  nik              String?   @unique @db.VarChar(16)
+  fullName         String
+  phone            String?   @db.VarChar(15)
+  gender           Gender?
+  dateOfBirth      DateTime?
+  qrCode           String?   @unique
+  fingerprintData  String?   @db.Text
+  profilePicture   String?
+  isActive         Boolean   @default(true)
+  emailVerified    Boolean   @default(false)
+  lastLogin        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // Address - simple inline
+  street           String?
+  village          String?
+  district         String?
+  regency          String?
+  province         String?
+
+  // Relations
+  familyMembers    FamilyMember[]  @relation("UserFamilyMembers")
+  familyOf         FamilyMember[]  @relation("FamilyMemberUser")
+  appointments     Appointment[]
+  queues           Queue[]
+  medicalRecords   MedicalRecord[]
+  labResults       LabResult[]
+  notifications    Notification[]
+  consultations    Consultation[]
+
+  @@map("users")
+  @@index([email])
+  @@index([nik])
+  @@index([role])
+}
+
+// ============================================================================
+// FAMILY MANAGEMENT (Simplified)
+// ============================================================================
+
+model FamilyMember {
+  id              String          @id @default(uuid())
+  userId          String          // Family head
+  memberId        String          // Member user ID
+  relation        FamilyRelation
+  nickname        String?
+  isEmergencyContact Boolean      @default(false)
+  isActive        Boolean         @default(true)
+  addedAt         DateTime        @default(now())
+
+  // Relations
+  user            User            @relation("UserFamilyMembers", fields: [userId], references: [id], onDelete: Cascade)
+  member          User            @relation("FamilyMemberUser", fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@map("family_members")
+  @@unique([userId, memberId])
+  @@index([userId])
+}
+
+// ============================================================================
+// HOSPITAL CONFIGURATION (Single Instance)
+// ============================================================================
+
+model HospitalConfig {
+  id                String    @id @default("hospital") // Fixed ID
+  hospitalName      String
+  hospitalAddress   String    @db.Text
+  hospitalPhone     String
+  hospitalEmail     String?
+  hospitalWebsite   String?
+  emergencyNumber   String?
+  
+  // Operational Settings (Editable)
+  queuePrefix       String    @default("A") // A001, A002, etc
+  maxQueuePerDay    Int       @default(100)
+  operatingHoursStart String  @default("08:00")
+  operatingHoursEnd String    @default("17:00")
+  queueCallInterval Int       @default(5) // minutes between calls
+  
+  // System Settings (Set once during initialization)
+  licenseNumber     String?   // Hospital license
+  accreditationLevel String? // Accreditation level
+  hospitalType      String?   // General, Specialist, Emergency, etc
+  bedCapacity       Int?      // Total bed capacity
+  isInitialized     Boolean   @default(false) // Set to true after first admin setup
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("hospital_config")
+}
+
+// ============================================================================
+// MEDICAL STAFF (Simplified - No hospital relation)
+// ============================================================================
+
+model Doctor {
+  id            String        @id @default(uuid())
+  licenseNumber String        @unique
+  name          String
+  specialty     String
+  phone         String?
+  email         String?
+  profilePicture String?
+  consultationFee Decimal?    @db.Decimal(10, 2)
+  isAvailable   Boolean       @default(true)
+  schedule      Json?         // Weekly schedule {monday: {start: "08:00", end: "12:00"}}
+  bio           String?       @db.Text
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  appointments  Appointment[]
+  queues        Queue[]
+  consultations Consultation[]
+  medicalRecords MedicalRecord[]
+
+  @@map("doctors")
+  @@index([specialty])
+  @@index([isAvailable])
+}
+
+// ============================================================================
+// CONSULTATION & AI (Core feature)
+// ============================================================================
+
+model Consultation {
+  id              String    @id @default(uuid())
+  userId          String
+  doctorId        String?
+  type            String    // 'AI', 'GENERAL', 'SPECIALIST'
+  severity        String?   // 'LOW', 'MEDIUM', 'HIGH'
+  symptoms        Json      // Array of symptoms
+  aiAnalysis      Json?     // AI analysis results
+  recommendations Json?     // Recommendations
+  chatHistory     Json?     // Chat messages
+  isCompleted     Boolean   @default(false)
+  rating          Int?      // 1-5 rating
+  feedback        String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  user            User      @relation(fields: [userId], references: [id])
+  doctor          Doctor?   @relation(fields: [doctorId], references: [id])
+  queue           Queue?
+  medicalRecord   MedicalRecord?
+
+  @@map("consultations")
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// QUEUE SYSTEM (Core feature - No hospital relation)
+// ============================================================================
+
+model Queue {
+  id                  String      @id @default(uuid())
+  userId              String
+  doctorId            String?
+  consultationId      String?     @unique
+  queueNumber         String      @unique // Format: A001, A002, etc
+  currentNumber       String?     // Currently being served
+  status              QueueStatus @default(WAITING)
+  position            Int
+  estimatedWaitTime   Int?        // Minutes
+  checkInTime         DateTime?
+  calledTime          DateTime?
+  completedTime       DateTime?
+  isPriority          Boolean     @default(false)
+  queueDate           DateTime    @db.Date // FIXED: Remove @default(now()) for Date type
+  notes               String?     @db.Text
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  // Relations
+  user                User        @relation(fields: [userId], references: [id])
+  doctor              Doctor?     @relation(fields: [doctorId], references: [id])
+  consultation        Consultation? @relation(fields: [consultationId], references: [id])
+
+  @@map("queues")
+  @@index([userId])
+  @@index([queueDate])
+  @@index([status])
+  @@index([position])
+}
+
+// ============================================================================
+// APPOINTMENT & SCHEDULING (No hospital relation)
+// ============================================================================
+
+model Appointment {
+  id              String            @id @default(uuid())
+  userId          String
+  doctorId        String
+  appointmentDate DateTime
+  startTime       DateTime
+  endTime         DateTime
+  type            String            // 'CONSULTATION', 'CHECKUP', 'FOLLOW_UP'
+  status          AppointmentStatus @default(SCHEDULED)
+  queueNumber     String?
+  reason          String?           @db.Text
+  notes           String?           @db.Text
+  reminderSent    Boolean           @default(false)
+  rating          Int?              // 1-5 rating
+  feedback        String?           @db.Text
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  // Relations
+  user            User              @relation(fields: [userId], references: [id])
+  doctor          Doctor            @relation(fields: [doctorId], references: [id])
+
+  @@map("appointments")
+  @@index([userId])
+  @@index([doctorId])
+  @@index([appointmentDate])
+  @@index([status])
+}
+
+// ============================================================================
+// MEDICAL RECORDS (Simplified - No hospital relation)
+// ============================================================================
+
+model MedicalRecord {
+  id              String      @id @default(uuid())
+  userId          String
+  doctorId        String
+  consultationId  String?     @unique
+  visitDate       DateTime
+  queueNumber     String?
+  diagnosis       String      @db.Text
+  treatment       String      @db.Text
+  symptoms        Json?       // Array of symptoms
+  vitalSigns      Json?       // {bp: "120/80", temp: "36.5", pulse: "72"}
+  medications     Json?       // [{name: "Paracetamol", dosage: "500mg", frequency: "3x1"}]
+  followUpDate    DateTime?
+  totalCost       Decimal?    @db.Decimal(10, 2)
+  paymentStatus   PaymentStatus @default(PENDING)
+  paymentMethod   PaymentMethod @default(CASH)
+  notes           String?     @db.Text
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Relations
+  user            User        @relation(fields: [userId], references: [id])
+  doctor          Doctor      @relation(fields: [doctorId], references: [id])
+  consultation    Consultation? @relation(fields: [consultationId], references: [id])
+  labResults      LabResult[]
+
+  @@map("medical_records")
+  @@index([userId])
+  @@index([doctorId])
+  @@index([visitDate])
+}
+
+// ============================================================================
+// LAB RESULTS (Simplified)
+// ============================================================================
+
+model LabResult {
+  id              String        @id @default(uuid())
+  userId          String
+  medicalRecordId String?
+  testName        String
+  testType        String        // 'BLOOD', 'URINE', 'XRAY', 'ULTRASOUND', etc
+  category        String?       // 'HEMATOLOGY', 'CHEMISTRY', 'RADIOLOGY', etc
+  results         Json          // Test results with values
+  normalRange     Json?         // Normal value ranges for reference
+  isNormal        Boolean?
+  isCritical      Boolean       @default(false)
+  doctorNotes     String?       @db.Text
+  testDate        DateTime
+  resultDate      DateTime?
+  isNew           Boolean       @default(true) // For notification purposes
+  reportUrl       String?       // PDF report if available
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  user            User          @relation(fields: [userId], references: [id])
+  medicalRecord   MedicalRecord? @relation(fields: [medicalRecordId], references: [id])
+
+  @@map("lab_results")
+  @@index([userId])
+  @@index([testDate])
+  @@index([isNew])
+  @@index([isCritical])
+}
+
+// ============================================================================
+// NOTIFICATIONS (Essential)
+// ============================================================================
+
+model Notification {
+  id            String              @id @default(uuid())
+  userId        String
+  title         String
+  message       String              @db.Text
+  type          NotificationType
+  priority      NotificationPriority @default(MEDIUM)
+  isRead        Boolean             @default(false)
+  actionUrl     String?             // Deep link URL
+  relatedData   Json?               // Additional contextual data
+  expiresAt     DateTime?
+  createdAt     DateTime            @default(now())
+  readAt        DateTime?
+
+  // Relations
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([type])
+}
+
+// ============================================================================
+// SYSTEM CONFIG & SETTINGS
+// ============================================================================
+
+model SystemConfig {
+  id          String    @id @default(uuid())
+  key         String    @unique
+  value       String    @db.Text
+  description String?   @db.Text
+  category    String?   // 'QUEUE', 'NOTIFICATION', 'PAYMENT', etc
+  isEditable  Boolean   @default(true)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("system_configs")
+  @@index([key])
+  @@index([category])
+}
+
+// ============================================================================
+// AUDIT LOG (Simplified - untuk track important changes)
+// ============================================================================
+
+model AuditLog {
+  id          String    @id @default(uuid())
+  userId      String?
+  action      String    // LOGIN, LOGOUT, CREATE_QUEUE, UPDATE_CONFIG, etc
+  resource    String    // 'queue', 'appointment', 'config', etc
+  resourceId  String?
+  details     String?   @db.Text
+  ipAddress   String?
+  timestamp   DateTime  @default(now())
+
+  @@map("audit_logs")
+  @@index([userId])
+  @@index([action])
+  @@index([timestamp])
 }
