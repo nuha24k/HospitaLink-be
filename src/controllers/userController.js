@@ -388,32 +388,84 @@ const registerFingerprint = async (req, res) => {
     const { fingerprintData } = req.body;
     const userId = req.user.id;
 
-    if (!fingerprintData) {
+    console.log('🔄 Processing fingerprint registration for user:', userId);
+    console.log('📝 Fingerprint data received:', fingerprintData);
+
+    if (!fingerprintData || typeof fingerprintData !== 'string') {
       return res.status(400).json({
         success: false,
-        message: 'Fingerprint data is required',
+        message: 'Valid fingerprint data is required',
       });
     }
 
-    // Check if fingerprint already exists
+    // Validate fingerprint data length
+    if (fingerprintData.trim().length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Fingerprint data is too short',
+      });
+    }
+
+    // Check if fingerprint already exists for another user
     const existingFingerprint = await prisma.user.findFirst({
       where: { 
-        fingerprintData: fingerprintData,
+        fingerprintData: fingerprintData.trim(),
         id: { not: userId }
       },
     });
 
     if (existingFingerprint) {
-      return res.status(400).json({
+      console.log('⚠️ Fingerprint already exists for another user');
+      return res.status(409).json({
         success: false,
-        message: 'Fingerprint already registered to another user',
+        message: 'This fingerprint is already registered to another account',
       });
     }
 
     // Update user fingerprint
     const updatedUser = await prisma.user.update({
       where: { id: userId },
-      data: { fingerprintData },
+      data: { fingerprintData: fingerprintData.trim() },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        fingerprintData: true,
+        role: true,
+      },
+    });
+
+    console.log('✅ Fingerprint registered successfully for user:', updatedUser.email);
+
+    res.json({
+      success: true,
+      message: 'Fingerprint registered successfully',
+      data: { 
+        user: updatedUser,
+        fingerprintRegistered: !!updatedUser.fingerprintData,
+      },
+    });
+
+  } catch (error) {
+    console.error('Register fingerprint error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to register fingerprint',
+    });
+  }
+};
+
+// Remove fingerprint
+const removeFingerprint = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    console.log('🗑️ Removing fingerprint for user:', userId);
+
+    // Update user fingerprint to null
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { fingerprintData: null },
       select: {
         id: true,
         email: true,
@@ -422,20 +474,27 @@ const registerFingerprint = async (req, res) => {
       },
     });
 
+    console.log('✅ Fingerprint removed successfully');
+
     res.json({
       success: true,
-      message: 'Fingerprint registered successfully',
-      data: { user: updatedUser },
+      message: 'Fingerprint removed successfully',
+      data: { 
+        user: updatedUser,
+        fingerprintRegistered: false,
+      },
     });
+
   } catch (error) {
-    console.error('Register fingerprint error:', error);
+    console.error('Remove fingerprint error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
+      message: 'Failed to remove fingerprint',
     });
   }
 };
 
+// Update exports
 module.exports = {
   getAllUsers,
   getUserById,
@@ -444,5 +503,6 @@ module.exports = {
   changeEmail,
   changePassword,
   registerFingerprint,
-  upload, // Export multer upload middleware
+  removeFingerprint,
+  upload,
 };

@@ -131,11 +131,11 @@ const userSeeder = async () => {
     },
 
     {
-      email: 'rudi.hartono@email.com',
+      email: 'dikagilang2007@gmail.com',
       password: 'password123',
       role: 'USER',
-      fullName: 'Rudi Hartono',
-      nik: '3201123456789005',
+      fullName: 'Rasya Dika Pratama',
+      nik: '1020304050607080',
       phone: '08123456705',
       gender: 'MALE',
       dateOfBirth: new Date('1982-07-08'),

@@ -3,6 +3,7 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser'); // Add cookie parser
 const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 
@@ -15,6 +16,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser()); // Add cookie parser middleware
 
 // Create upload directories if they don't exist
 const uploadDirs = ['uploads', 'uploads/profiles'];
@@ -39,11 +41,21 @@ app.get('/health', (req, res) => {
 
 // Import routes
 const authRoutes = require('./routes/authRoute');
-const userRoutes = require('./routes/userRoute'); // Pastikan ini ada
+const userRoutes = require('./routes/userRoute');
+const queueRoutes = require('./routes/queueRoute');
+const consultationRoutes = require('./routes/consultationRoute');
 
-// Use routes
+// Import web routes
+const webDoctorRoutes = require('./routes/web/doctor');
+
+// API Routes (Mobile)
 app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes); // Pastikan ini ada
+app.use('/api/users', userRoutes);
+app.use('/api/consultations', consultationRoutes);
+app.use('/api/queues', queueRoutes);
+
+// Web Routes (Dashboard)
+app.use('/api/web/doctor', webDoctorRoutes);
 
 // API info
 app.get('/api', (req, res) => {
@@ -54,6 +66,9 @@ app.get('/api', (req, res) => {
       health: '/health',
       auth: '/api/auth',
       users: '/api/users',
+      consultations: '/api/consultations',
+      queues: '/api/queues',
+      webDoctor: '/api/web/doctor',
     },
   });
 });

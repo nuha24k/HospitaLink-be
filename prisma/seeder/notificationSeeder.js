@@ -16,6 +16,8 @@ const notificationSeeder = async () => {
     return;
   }
 
+  console.log(`  📊 Found ${users.length} users for notifications`);
+
   const notifications = [
     // Queue notifications
     {
@@ -34,7 +36,7 @@ const notificationSeeder = async () => {
     },
 
     {
-      userId: users[1].id,
+      userId: users[1] ? users[1].id : users[0].id,
       title: '⏰ Estimasi Waktu Antrian',
       message: 'Perkiraan waktu tunggu Anda: 15 menit. Nomor antrian saat ini: RS001',
       type: 'QUEUE',
@@ -50,7 +52,7 @@ const notificationSeeder = async () => {
 
     // Appointment notifications
     {
-      userId: users[2].id,
+      userId: users[2] ? users[2].id : users[0].id,
       title: '📅 Pengingat Janji Temu',
       message: 'Anda memiliki janji temu dengan Dr. Linda Kartika besok pukul 08:00. Jangan lupa datang 15 menit sebelumnya.',
       type: 'APPOINTMENT',
@@ -66,7 +68,7 @@ const notificationSeeder = async () => {
     },
 
     {
-      userId: users[3].id,
+      userId: users[3] ? users[3].id : users[0].id,
       title: '✅ Janji Temu Dikonfirmasi',
       message: 'Janji temu Anda dengan Dr. Ahmad Rahman pada tanggal 25 Desember 2024 telah dikonfirmasi.',
       type: 'APPOINTMENT',
@@ -99,7 +101,7 @@ const notificationSeeder = async () => {
     },
 
     {
-      userId: users[1].id,
+      userId: users[1] ? users[1].id : users[0].id,
       title: '📋 Hasil Lab Tersedia',
       message: 'Hasil pemeriksaan Gula Darah Sewaktu Anda sudah tersedia. Silakan cek di aplikasi.',
       type: 'LAB_RESULT',
@@ -113,7 +115,7 @@ const notificationSeeder = async () => {
     },
 
     {
-      userId: users[3].id,
+      userId: users[3] ? users[3].id : users[0].id,
       title: '✅ Hasil Lab Normal',
       message: 'Hasil pemeriksaan Urine Lengkap Anda menunjukkan hasil dalam batas normal.',
       type: 'LAB_RESULT',
@@ -125,41 +127,47 @@ const notificationSeeder = async () => {
         testName: 'Urine Lengkap',
         isNormal: true
       }
-    },
+    }
+  ];
 
-    // Payment notifications
-    {
-      userId: users[4].id,
-      title: '💳 Tagihan Belum Dibayar',
-      message: 'Anda memiliki tagihan sebesar Rp 200.000 untuk konsultasi dengan Dr. Sarah Wijaya. Batas pembayaran: 3 hari.',
-      type: 'PAYMENT',
-      priority: 'MEDIUM',
-      isRead: false,
-      actionUrl: '/payments',
-      relatedData: {
-        amount: 200000,
-        dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-        doctorName: 'Dr. Sarah Wijaya'
+  // Add more notifications only if we have enough users
+  if (users.length >= 5) {
+    notifications.push(
+      {
+        userId: users[4].id,
+        title: '💳 Tagihan Belum Dibayar',
+        message: 'Anda memiliki tagihan sebesar Rp 200.000 untuk konsultasi dengan Dr. Sarah Wijaya. Batas pembayaran: 3 hari.',
+        type: 'PAYMENT',
+        priority: 'MEDIUM',
+        isRead: false,
+        actionUrl: '/payments',
+        relatedData: {
+          amount: 200000,
+          dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+          doctorName: 'Dr. Sarah Wijaya'
+        }
+      },
+
+      {
+        userId: users[2].id,
+        title: '✅ Pembayaran Berhasil',
+        message: 'Pembayaran sebesar Rp 175.000 untuk konsultasi telah berhasil diproses.',
+        type: 'PAYMENT',
+        priority: 'LOW',
+        isRead: true,
+        readAt: new Date(Date.now() - 30 * 60 * 1000),
+        actionUrl: '/payments',
+        relatedData: {
+          amount: 175000,
+          status: 'paid',
+          paymentMethod: 'CASH'
+        }
       }
-    },
+    );
+  }
 
-    {
-      userId: users[2].id,
-      title: '✅ Pembayaran Berhasil',
-      message: 'Pembayaran sebesar Rp 175.000 untuk konsultasi telah berhasil diproses.',
-      type: 'PAYMENT',
-      priority: 'LOW',
-      isRead: true,
-      readAt: new Date(Date.now() - 30 * 60 * 1000),
-      actionUrl: '/payments',
-      relatedData: {
-        amount: 175000,
-        status: 'paid',
-        paymentMethod: 'CASH'
-      }
-    },
-
-    // System notifications
+  // System notifications for all users
+  notifications.push(
     {
       userId: users[0].id,
       title: '🔄 Pembaruan Sistem',
@@ -174,7 +182,7 @@ const notificationSeeder = async () => {
     },
 
     {
-      userId: users[1].id,
+      userId: users[1] ? users[1].id : users[0].id,
       title: '🎉 Selamat Datang!',
       message: 'Selamat datang di HospitalLink! Nikmati kemudahan akses layanan kesehatan di ujung jari Anda.',
       type: 'SYSTEM',
@@ -185,34 +193,22 @@ const notificationSeeder = async () => {
         welcomeMessage: true,
         firstLogin: true
       }
-    },
-
-    // Old notifications (for testing pagination)
-    {
-      userId: users[0].id,
-      title: '📅 Janji Temu Selesai',
-      message: 'Terima kasih telah menggunakan layanan kami. Jangan lupa berikan rating untuk dokter.',
-      type: 'APPOINTMENT',
-      priority: 'LOW',
-      isRead: true,
-      readAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-      createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-      actionUrl: '/appointments/rate',
-      relatedData: {
-        appointmentId: 'apt_old_001',
-        doctorName: 'Dr. Sarah Wijaya',
-        canRate: true
-      }
     }
-  ];
+  );
 
+  let createdCount = 0;
   for (const notification of notifications) {
-    await prisma.notification.create({
-      data: notification
-    });
+    try {
+      await prisma.notification.create({
+        data: notification
+      });
+      createdCount++;
+    } catch (error) {
+      console.log(`  ⚠️ Failed to create notification: ${error.message}`);
+    }
   }
 
-  console.log(`  ✅ ${notifications.length} notifications created`);
+  console.log(`  ✅ ${createdCount} notifications created`);
 };
 
 module.exports = notificationSeeder;

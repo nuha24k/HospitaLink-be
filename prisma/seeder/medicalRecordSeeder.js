@@ -17,7 +17,7 @@ const medicalRecordSeeder = async () => {
   });
 
   const doctors = await prisma.doctor.findMany({
-    take: 3
+    take: 5 // Increase this to avoid index issues
   });
 
   if (users.length === 0 || doctors.length === 0) {
@@ -25,9 +25,11 @@ const medicalRecordSeeder = async () => {
     return;
   }
 
+  console.log(`  📊 Found ${users.length} users, ${doctors.length} doctors, ${completedConsultations.length} completed consultations`);
+
   const medicalRecords = [
-    // Records with consultations
-    ...completedConsultations.slice(0, 3).map((consultation, index) => ({
+    // Records with consultations - only if consultations exist
+    ...completedConsultations.slice(0, Math.min(3, completedConsultations.length)).map((consultation, index) => ({
       userId: consultation.userId,
       doctorId: consultation.doctorId || doctors[0].id,
       consultationId: consultation.id,
@@ -81,8 +83,8 @@ const medicalRecordSeeder = async () => {
     },
 
     {
-      userId: users[1].id,
-      doctorId: doctors[1].id,
+      userId: users[1] ? users[1].id : users[0].id,
+      doctorId: doctors[1] ? doctors[1].id : doctors[0].id,
       visitDate: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), // 3 days ago
       queueNumber: 'RS011',
       diagnosis: 'Gastroenteritis Akut',
@@ -108,8 +110,8 @@ const medicalRecordSeeder = async () => {
     },
 
     {
-      userId: users[2].id,
-      doctorId: doctors[2].id,
+      userId: users[2] ? users[2].id : users[0].id,
+      doctorId: doctors[0].id, // Use safe index
       visitDate: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000), // 2 weeks ago
       queueNumber: 'RS012',
       diagnosis: 'Miopia Ringan',
@@ -134,8 +136,8 @@ const medicalRecordSeeder = async () => {
     },
 
     {
-      userId: users[3].id,
-      doctorId: doctors[0].id,
+      userId: users[3] ? users[3].id : users[0].id,
+      doctorId: doctors[0].id, // Use safe index
       visitDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // Yesterday
       queueNumber: 'RS013',
       diagnosis: 'Hipertensi Stadium 1',
@@ -160,26 +162,45 @@ const medicalRecordSeeder = async () => {
     }
   ];
 
+  let createdCount = 0;
   for (const record of medicalRecords) {
-    await prisma.medicalRecord.create({
-      data: record
-    });
+    try {
+      await prisma.medicalRecord.create({
+        data: record
+      });
+      createdCount++;
+    } catch (error) {
+      console.log(`  ⚠️ Failed to create medical record: ${error.message}`);
+    }
   }
 
-  console.log(`  ✅ ${medicalRecords.length} medical records created`);
+  console.log(`  ✅ ${createdCount} medical records created`);
 };
 
 // Helper functions
 function getDiagnosisBySymptoms(symptoms) {
-  if (symptoms.some(s => s.toLowerCase().includes('demam'))) {
+  if (!symptoms || symptoms.length === 0) {
+    return 'Pemeriksaan umum - kondisi stabil';
+  }
+  
+  const symptomsText = symptoms.join(' ').toLowerCase();
+  
+  if (symptomsText.includes('demam')) {
     return 'Sindrom Demam - perlu evaluasi lebih lanjut';
   }
-  if (symptoms.some(s => s.toLowerCase().includes('batuk'))) {
+  if (symptomsText.includes('batuk')) {
     return 'Infeksi Saluran Pernapasan Atas';
   }
-  if (symptoms.some(s => s.toLowerCase().includes('nyeri dada'))) {
+  if (symptomsText.includes('nyeri dada')) {
     return 'Nyeri Dada Non-Spesifik - perlu pemeriksaan jantung';
   }
+  if (symptomsText.includes('sakit perut') || symptomsText.includes('diare')) {
+    return 'Gangguan Pencernaan';
+  }
+  if (symptomsText.includes('sakit kepala') || symptomsText.includes('pusing')) {
+    return 'Cephalgia - perlu evaluasi lebih lanjut';
+  }
+  
   return 'Pemeriksaan umum - kondisi stabil';
 }
 

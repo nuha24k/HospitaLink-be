@@ -4,585 +4,336 @@ const jwt = require('jsonwebtoken');
 
 const prisma = new PrismaClient();
 
+// Generate JWT token
 const generateToken = (userId) => {
   return jwt.sign(
-    { userId }, 
-    process.env.JWT_SECRET || 'hospitalink-secret', 
+    { userId },
+    process.env.JWT_SECRET || 'your-secret-key',
     { expiresIn: '7d' }
   );
 };
 
-// Validation helper functions
-const validateEmail = (email) => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
-
-const validateNIK = (nik) => {
-  // NIK must be exactly 16 digits
-  const nikRegex = /^\d{16}$/;
-  return nikRegex.test(nik);
-};
-
-const validatePhone = (phone) => {
-  // Indonesian phone number format
-  const phoneRegex = /^(\+62|62|0)8[1-9][0-9]{6,11}$/;
-  return phoneRegex.test(phone);
-};
-
-const validatePassword = (password) => {
-  // At least 6 characters
-  return password && password.length >= 6;
-};
-
-const registerPatient = async (req, res) => {
+// Register user (mobile only)
+const registerUser = async (req, res) => {
   try {
-    const { email, password, fullName, phone, nik, gender, dateOfBirth, fingerprintData } = req.body;
+    const {
+      email,
+      password,
+      fullName,
+      nik,
+      phone,
+      gender,
+      dateOfBirth,
+      street,
+      village,
+      district,
+      regency,
+      province,
+      fingerprintData
+    } = req.body;
 
-    // ========================================
-    // INPUT VALIDATION
-    // ========================================
-    
-    // Required fields validation
-    if (!email || !password || !fullName) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email, password, and fullName are required',
-        required_fields: ['email', 'password', 'fullName']
-      });
-    }
-
-    // Email validation
-    if (!validateEmail(email)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide a valid email address',
-        field: 'email'
-      });
-    }
-
-    // Password validation
-    if (!validatePassword(password)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must be at least 6 characters long',
-        field: 'password'
-      });
-    }
-
-    // Full name validation
-    if (fullName.trim().length < 2 || fullName.trim().length > 100) {
-      return res.status(400).json({
-        success: false,
-        message: 'Full name must be between 2 and 100 characters',
-        field: 'fullName'
-      });
-    }
-
-    // NIK validation (if provided)
-    if (nik && !validateNIK(nik)) {
-      return res.status(400).json({
-        success: false,
-        message: 'NIK must be exactly 16 digits',
-        field: 'nik',
-        example: '1234567890123456'
-      });
-    }
-
-    // Phone validation (if provided)
-    if (phone && !validatePhone(phone)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide a valid Indonesian phone number',
-        field: 'phone',
-        examples: ['081234567890', '62812345678901', '+628123456789']
-      });
-    }
-
-    // Gender validation (if provided)
-    if (gender && !['MALE', 'FEMALE'].includes(gender.toUpperCase())) {
-      return res.status(400).json({
-        success: false,
-        message: 'Gender must be either MALE or FEMALE',
-        field: 'gender',
-        allowed_values: ['MALE', 'FEMALE']
-      });
-    }
-
-    // Date of birth validation (if provided)
-    if (dateOfBirth) {
-      const dobDate = new Date(dateOfBirth);
-      if (isNaN(dobDate.getTime())) {
-        return res.status(400).json({
-          success: false,
-          message: 'Please provide a valid date of birth',
-          field: 'dateOfBirth',
-          format: 'YYYY-MM-DD'
-        });
-      }
-
-      // Check if age is reasonable (not in future, not too old)
-      const today = new Date();
-      const age = today.getFullYear() - dobDate.getFullYear();
-      if (dobDate > today) {
-        return res.status(400).json({
-          success: false,
-          message: 'Date of birth cannot be in the future',
-          field: 'dateOfBirth'
-        });
-      }
-      if (age > 150) {
-        return res.status(400).json({
-          success: false,
-          message: 'Please provide a valid date of birth',
-          field: 'dateOfBirth'
-        });
-      }
-    }
-
-    // ========================================
-    // CHECK EXISTING USER
-    // ========================================
-    const whereConditions = [{ email }];
-    if (nik) {
-      whereConditions.push({ nik });
-    }
-
+    // Check if user already exists
     const existingUser = await prisma.user.findFirst({
-      where: { OR: whereConditions }
+      where: {
+        OR: [
+          { email: email.toLowerCase() },
+          ...(nik ? [{ nik }] : [])
+        ]
+      }
     });
 
     if (existingUser) {
-      const conflictField = existingUser.email === email ? 'email' : 'nik';
-      return res.status(409).json({
-        success: false,
-        message: `User with this ${conflictField} already exists`,
-        conflict_field: conflictField,
-        existing_value: conflictField === 'email' ? email : nik
-      });
+      if (existingUser.email === email.toLowerCase()) {
+        return res.status(409).json({
+          success: false,
+          message: 'User with this email already exists'
+        });
+      }
+      if (existingUser.nik === nik) {
+        return res.status(409).json({
+          success: false,
+          message: 'User with this nik already exists'
+        });
+      }
     }
 
-    // ========================================
-    // CREATE USER
-    // ========================================
-    
+    // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    const userData = {
-      email: email.toLowerCase().trim(),
-      password: hashedPassword,
-      fullName: fullName.trim(),
-      role: 'USER',
-      isActive: true,
-      qrCode: `QR_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`,
-    };
-
-    // Add optional fields only if provided
-    if (phone) userData.phone = phone.trim();
-    if (nik) userData.nik = nik.trim();
-    if (gender) userData.gender = gender.toUpperCase();
-    if (dateOfBirth) userData.dateOfBirth = new Date(dateOfBirth);
-    if (fingerprintData) userData.fingerprintData = fingerprintData;
-
+    // Create user (mobile patients only)
     const user = await prisma.user.create({
-      data: userData,
+      data: {
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        fullName,
+        nik: nik || null,
+        phone: phone || null,
+        gender: gender ? gender.toUpperCase() : null,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+        street: street || null,
+        village: village || null,
+        district: district || null,
+        regency: regency || null,
+        province: province || null,
+        fingerprintData: fingerprintData || null,
+        qrCode: `QR_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+        role: 'USER' // Only allow USER role for mobile registration
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        nik: true,
+        phone: true,
+        gender: true,
+        dateOfBirth: true,
+        street: true,
+        village: true,
+        district: true,
+        regency: true,
+        province: true,
+        qrCode: true,
+        fingerprintData: true,
+        profilePicture: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        lastLogin: true
+      }
     });
 
-    // ========================================
-    // GENERATE TOKEN & RESPONSE
-    // ========================================
-    
+    // Generate token
     const token = generateToken(user.id);
-    const { password: _, ...userWithoutPassword } = user;
 
-    console.log('✅ User created successfully:', {
-      email: user.email,
-      fingerprintData: user.fingerprintData, // Debug log
+    // Update last login
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLogin: new Date() }
     });
 
     res.status(201).json({
       success: true,
       message: 'User registered successfully',
-      data: { 
-        token, 
-        user: userWithoutPassword, // Pastikan fingerprintData included
-        qrCode: user.qrCode
-      },
+      data: { user, token }
     });
 
   } catch (error) {
     console.error('Register error:', error);
-
-    // Handle Prisma-specific errors
-    if (error.code === 'P2002') {
-      // Unique constraint violation
-      const field = error.meta?.target?.[0] || 'field';
-      return res.status(409).json({
-        success: false,
-        message: `User with this ${field} already exists`,
-        field: field,
-        error_code: 'DUPLICATE_VALUE'
-      });
-    }
-
-    if (error.code === 'P2000') {
-      // Value too long for column
-      const field = error.meta?.column_name || 'field';
-      let message = `${field} is too long`;
-      let maxLength = 'allowed length';
-
-      // Specific field handling
-      if (field === 'nik') {
-        message = 'NIK must be exactly 16 digits';
-        maxLength = '16 characters';
-      } else if (field === 'email') {
-        message = 'Email address is too long';
-        maxLength = '100 characters';
-      } else if (field === 'fullName') {
-        message = 'Full name is too long';
-        maxLength = '100 characters';
-      } else if (field === 'phone') {
-        message = 'Phone number is too long';
-        maxLength = '20 characters';
-      }
-
-      return res.status(400).json({
-        success: false,
-        message: message,
-        field: field,
-        max_length: maxLength,
-        error_code: 'VALUE_TOO_LONG'
-      });
-    }
-
-    // General server error
     res.status(500).json({
       success: false,
-      message: 'Registration failed due to server error',
-      error_code: 'INTERNAL_SERVER_ERROR',
-      ...(process.env.NODE_ENV === 'development' && { debug: error.message })
+      message: 'Internal server error'
     });
   }
 };
 
-const loginMobile = async (req, res) => {
+// Login user (mobile only)
+const loginUser = async (req, res) => {
   try {
-    const { email, password, nik, fingerprintData } = req.body;
+    const { email, nik, password } = req.body;
 
-    // ========================================
-    // FINGERPRINT LOGIN
-    // ========================================
-    if (fingerprintData) {
-      console.log('🔍 Attempting fingerprint login with:', fingerprintData);
-
-      if (typeof fingerprintData !== 'string' || fingerprintData.trim().length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Valid fingerprint data is required',
-          field: 'fingerprintData'
-        });
-      }
-
-      const user = await prisma.user.findFirst({
-        where: { fingerprintData: fingerprintData.trim() }
-      });
-
-      console.log('🔍 Found user with fingerprint:', user ? user.email : 'NOT FOUND');
-
-      if (!user) {
-        // Check if any users have fingerprint data for debugging
-        const usersWithFingerprint = await prisma.user.findMany({
-          where: { 
-            fingerprintData: { not: null } 
-          },
-          select: {
-            id: true,
-            email: true,
-            fingerprintData: true
-          }
-        });
-        
-        console.log('🔍 All users with fingerprint data:', usersWithFingerprint);
-
-        return res.status(401).json({
-          success: false,
-          message: 'Fingerprint not recognized. Please register your fingerprint or use email/NIK login',
-          login_alternatives: ['email + password', 'nik + password'],
-          debug_info: process.env.NODE_ENV === 'development' ? {
-            provided_fingerprint: fingerprintData,
-            users_with_fingerprint: usersWithFingerprint.length
-          } : undefined
-        });
-      }
-
-      if (!user.isActive) {
-        return res.status(403).json({
-          success: false,
-          message: 'Account is deactivated. Please contact support',
-          contact_support: true
-        });
-      }
-
-      const token = generateToken(user.id);
-
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { lastLogin: new Date() }
-      });
-
-      const { password: _, ...userWithoutPassword } = user;
-
-      console.log('✅ Fingerprint login successful for:', user.email);
-
-      return res.json({
-        success: true,
-        message: 'Fingerprint login successful',
-        data: { 
-          token, 
-          user: userWithoutPassword,
-          loginMethod: 'fingerprint'
-        },
-      });
-    }
-
-    // ========================================
-    // EMAIL/NIK + PASSWORD LOGIN
-    // ========================================
     if (!password) {
       return res.status(400).json({
         success: false,
-        message: 'Password is required for email/NIK login',
-        field: 'password'
+        message: 'Password is required'
       });
     }
 
     if (!email && !nik) {
       return res.status(400).json({
         success: false,
-        message: 'Email, NIK, or fingerprint is required',
-        required_fields: ['email OR nik OR fingerprintData']
+        message: 'Email or NIK is required'
       });
     }
 
-    // Validate NIK format if provided
-    if (nik && !validateNIK(nik)) {
-      return res.status(400).json({
-        success: false,
-        message: 'NIK must be exactly 16 digits',
-        field: 'nik'
-      });
-    }
-
-    // Validate email format if provided
-    if (email && !validateEmail(email)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide a valid email address',
-        field: 'email'
-      });
-    }
-
-    const whereConditions = [];
-    if (email) whereConditions.push({ email: email.toLowerCase().trim() });
-    if (nik) whereConditions.push({ nik: nik.trim() });
-
+    // Find user (only USER role for mobile)
     const user = await prisma.user.findFirst({
-      where: { OR: whereConditions }
+      where: {
+        AND: [
+          {
+            OR: [
+              ...(email ? [{ email: email.toLowerCase() }] : []),
+              ...(nik ? [{ nik }] : [])
+            ]
+          },
+          { role: { in: ['USER', 'PATIENT'] } } // Only allow mobile users
+        ]
+      }
     });
 
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials. Please check your email/NIK and password',
-        hint: 'Make sure you are using the correct email or NIK you registered with'
+        message: 'Invalid credentials'
       });
     }
 
+    // Verify password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Check if user is active
     if (!user.isActive) {
       return res.status(403).json({
         success: false,
-        message: 'Account is deactivated. Please contact support',
-        contact_support: true
+        message: 'Account is deactivated'
       });
     }
 
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials. Please check your password',
-        hint: 'Password is case-sensitive'
-      });
-    }
-
+    // Generate token
     const token = generateToken(user.id);
 
+    // Update last login
     await prisma.user.update({
       where: { id: user.id },
       data: { lastLogin: new Date() }
     });
 
+    // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
     res.json({
       success: true,
       message: 'Login successful',
-      data: { 
-        token, 
-        user: userWithoutPassword,
-        loginMethod: email ? 'email' : 'nik'
-      },
+      data: { user: userWithoutPassword, token }
     });
 
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({
       success: false,
-      message: 'Login failed due to server error',
-      error_code: 'INTERNAL_SERVER_ERROR',
-      ...(process.env.NODE_ENV === 'development' && { debug: error.message })
+      message: 'Internal server error'
     });
   }
 };
 
-const loginWeb = async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email and password are required',
-        required_fields: ['email', 'password']
-      });
-    }
-
-    if (!validateEmail(email)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide a valid email address',
-        field: 'email'
-      });
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase().trim() }
-    });
-
-    if (!user || user.role !== 'ADMIN') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials or insufficient permissions',
-        note: 'Web access is restricted to hospital staff only',
-        contact_admin: 'Please contact your administrator for web access'
-      });
-    }
-
-    if (!user.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: 'Account is deactivated. Please contact administrator',
-        contact_admin: true
-      });
-    }
-
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials',
-        hint: 'Please check your email and password'
-      });
-    }
-
-    const token = generateToken(user.id);
-    const { password: _, ...userWithoutPassword } = user;
-
-    res.json({
-      success: true,
-      message: 'Web login successful',
-      data: { 
-        token, 
-        user: userWithoutPassword,
-        loginMethod: 'web',
-        platform: 'web'
-      },
-    });
-
-  } catch (error) {
-    console.error('Web login error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Web login failed due to server error',
-      error_code: 'INTERNAL_SERVER_ERROR',
-      ...(process.env.NODE_ENV === 'development' && { debug: error.message })
-    });
-  }
-};
-
-// Tambah method untuk debug fingerprint:
-
-const getUserByFingerprint = async (req, res) => {
+// Fingerprint login (mobile only)
+const fingerprintLogin = async (req, res) => {
   try {
     const { fingerprintData } = req.body;
-    
+
     if (!fingerprintData) {
       return res.status(400).json({
         success: false,
-        message: 'Fingerprint data required'
+        message: 'Fingerprint data is required'
       });
     }
 
+    console.log('🔄 Fingerprint login attempt:', fingerprintData);
+
+    // Find user by fingerprint (only mobile users)
     const user = await prisma.user.findFirst({
-      where: { fingerprintData: fingerprintData.trim() }
+      where: { 
+        fingerprintData: fingerprintData.trim(),
+        role: { in: ['USER', 'PATIENT'] }, // Only allow mobile users
+        isActive: true
+      }
     });
 
     if (!user) {
-      // Show all users with fingerprint for debugging
-      const allFingerprintUsers = await prisma.user.findMany({
-        where: { 
-          fingerprintData: { not: null }
-        },
-        select: {
-          id: true,
-          email: true,
-          fingerprintData: true,
-          fullName: true
-        }
-      });
-
-      return res.status(404).json({
+      console.log('❌ Fingerprint not found or user inactive');
+      return res.status(401).json({
         success: false,
-        message: 'User with fingerprint not found',
-        debug: {
-          searched_fingerprint: fingerprintData,
-          all_fingerprint_users: allFingerprintUsers
-        }
+        message: 'Fingerprint not recognized or account inactive'
       });
     }
 
+    console.log('✅ User found for fingerprint:', user.email);
+
+    // Generate token
+    const token = generateToken(user.id);
+
+    // Update last login
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLogin: new Date() }
+    });
+
+    // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
     res.json({
       success: true,
-      message: 'User found',
-      data: { user: userWithoutPassword }
+      message: 'Fingerprint login successful',
+      data: { user: userWithoutPassword, token }
     });
 
   } catch (error) {
-    console.error('Get user by fingerprint error:', error);
+    console.error('Fingerprint login error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: 'Internal server error'
     });
   }
 };
 
-// Export method
+// Fingerprint verification helper (mobile only)
+const fingerprintVerify = async (req, res) => {
+  try {
+    const { email, deviceId } = req.body;
+
+    if (!email || !deviceId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and device ID are required'
+      });
+    }
+
+    console.log('🔄 Fingerprint verify request for:', email, 'device:', deviceId);
+
+    // Find user by email (only mobile users)
+    const user = await prisma.user.findFirst({
+      where: { 
+        email: email.toLowerCase(),
+        role: { in: ['USER', 'PATIENT'] },
+        isActive: true
+      }
+    });
+
+    if (!user) {
+      console.log('❌ User not found:', email);
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if user has fingerprint data
+    if (!user.fingerprintData) {
+      console.log('❌ No fingerprint data for user:', email);
+      return res.status(404).json({
+        success: false,
+        message: 'No fingerprint data found for user'
+      });
+    }
+
+    console.log('✅ Found fingerprint for user:', email);
+
+    res.json({
+      success: true,
+      message: 'Fingerprint data found',
+      data: { 
+        fingerprintData: user.fingerprintData,
+        userId: user.id
+      }
+    });
+
+  } catch (error) {
+    console.error('Fingerprint verify error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
 module.exports = {
-  registerPatient,
-  loginMobile,
-  loginWeb,
-  getUserByFingerprint, // Tambah ini
+  registerUser,
+  loginUser,
+  fingerprintLogin,
+  fingerprintVerify,
 };

@@ -3,207 +3,115 @@ const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
-// Main authentication middleware
+// Existing mobile auth middleware
 const authMiddleware = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        message: 'Access token required. Please provide Bearer token in Authorization header',
-      });
-    }
-
-    const token = authHeader.split(' ')[1];
+    const token = req.header('Authorization')?.replace('Bearer ', '');
 
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid token format',
+        message: 'Access denied. No token provided.',
       });
     }
 
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'hospitalink-secret');
     
-    // Get user from database
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        role: true,
-        isActive: true,
-        emailVerified: true,
-        createdAt: true,
-        updatedAt: true,
-      }
+      select: { id: true, role: true, isActive: true },
     });
 
-    if (!user) {
+    if (!user || !user.isActive) {
       return res.status(401).json({
         success: false,
-        message: 'User not found',
+        message: 'Invalid token or user inactive.',
       });
     }
 
-    if (!user.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: 'Account is deactivated',
-      });
-    }
-
-    // Add platform info from token
-    user.platform = decoded.platform || 'mobile';
-
-    // Attach user to request
     req.user = user;
     next();
-
   } catch (error) {
-    console.error('Auth middleware error:', error);
-    
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid token',
-      });
-    }
-    
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Token expired',
-      });
-    }
-
-    return res.status(500).json({
+    res.status(401).json({
       success: false,
-      message: 'Authentication failed',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      message: 'Invalid token.',
     });
   }
 };
 
-// Platform-specific access control
-const requirePlatform = (allowedPlatforms) => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required',
-      });
-    }
-
-    if (!allowedPlatforms.includes(req.user.platform)) {
-      return res.status(403).json({
-        success: false,
-        message: `Access denied. This endpoint is only available for: ${allowedPlatforms.join(', ')}`,
-      });
-    }
-
-    next();
-  };
-};
-
-// Role-based access control
-const requireRole = (allowedRoles) => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required',
-      });
-    }
-
-    if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        message: `Access denied. Required roles: ${allowedRoles.join(', ')}`,
-      });
-    }
-
-    next();
-  };
-};
-
-// Combined role and platform check
-const requireRoleAndPlatform = (allowedRoles, allowedPlatforms) => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required',
-      });
-    }
-
-    if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({
-        success: false,
-        message: `Access denied. Required roles: ${allowedRoles.join(', ')}`,
-      });
-    }
-
-    if (!allowedPlatforms.includes(req.user.platform)) {
-      return res.status(403).json({
-        success: false,
-        message: `Access denied. Required platforms: ${allowedPlatforms.join(', ')}`,
-      });
-    }
-
-    next();
-  };
-};
-
-// Optional authentication (for public endpoints that can benefit from user context)
-const optionalAuth = async (req, res, next) => {
+// NEW: Web auth middleware (for cookies)
+const authWebMiddleware = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
+    // Check for token in cookies or Authorization header
+    const token = req.cookies?.doctorToken || 
+                  req.cookies?.adminToken || 
+                  req.header('Authorization')?.replace('Bearer ', '');
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return next(); // Continue without authentication
-    }
-
-    const token = authHeader.split(' ')[1];
     if (!token) {
-      return next(); // Continue without authentication
+      return res.status(401).json({
+        success: false,
+        message: 'Access denied. No token provided.',
+      });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'hospitalink-secret');
+    
+    // Verify platform is web
+    if (decoded.platform !== 'web') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token platform.',
+      });
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        role: true,
-        isActive: true,
-      }
+      select: { id: true, role: true, isActive: true },
     });
 
-    if (user && user.isActive) {
-      req.user = user;
+    if (!user || !user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token or user inactive.',
+      });
     }
 
+    req.user = user;
     next();
-
   } catch (error) {
-    // Silently continue without authentication on any error
-    next();
+    if (error.name === 'TokenExpiredError') {
+      // Clear expired cookie
+      res.clearCookie('doctorToken');
+      res.clearCookie('adminToken');
+      
+      return res.status(401).json({
+        success: false,
+        message: 'Token expired. Please login again.',
+      });
+    }
+
+    res.status(401).json({
+      success: false,
+      message: 'Invalid token.',
+    });
   }
+};
+
+// Keep existing requireRole middleware
+const requireRole = (allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user || !allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Insufficient permissions.',
+      });
+    }
+    next();
+  };
 };
 
 module.exports = {
-  authMiddleware,
+  authMiddleware,      // For mobile API
+  authWebMiddleware,   // For web dashboard
   requireRole,
-  requirePlatform,
-  requireRoleAndPlatform,
-  optionalAuth,
-  // Aliases for convenience
-  auth: authMiddleware,
-  checkRole: requireRole,
-  checkPlatform: requirePlatform,
 };

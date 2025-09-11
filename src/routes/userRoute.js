@@ -58,11 +58,12 @@ router.put('/change-password',
 );
 
 // Fingerprint management
-router.post('/register-fingerprint',
+router.put('/register-fingerprint',
   fingerprintValidation,
   handleValidationErrors,
   userController.registerFingerprint
 );
+router.delete('/remove-fingerprint', userController.removeFingerprint);
 
 // ============================================================================
 // ADMIN ROUTES
