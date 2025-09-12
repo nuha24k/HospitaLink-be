@@ -130,23 +130,6 @@ const userSeeder = async () => {
       province: 'Jawa Barat'
     },
 
-    {
-      email: 'dikagilang2007@gmail.com',
-      password: 'password123',
-      role: 'USER',
-      fullName: 'Rasya Dika Pratama',
-      nik: '1020304050607080',
-      phone: '08123456705',
-      gender: 'MALE',
-      dateOfBirth: new Date('1982-07-08'),
-      qrCode: 'USER_005',
-      street: 'Jl. Kenanga No. 12',
-      village: 'Bekasi Utara',
-      district: 'Bekasi Utara',
-      regency: 'Kota Bekasi',
-      province: 'Jawa Barat'
-    },
-
     // Your personal accounts
     {
       email: 'sofwannuhaalfaruq@gmail.com',

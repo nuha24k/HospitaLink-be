@@ -5,20 +5,20 @@ const jwt = require('jsonwebtoken');
 const prisma = new PrismaClient();
 
 // Generate token for web sessions
-const generateWebToken = (userId) => {
+const generateWebToken = (userId, role = 'DOCTOR') => {
   return jwt.sign(
-    { userId, platform: 'web', role: 'DOCTOR' }, 
+    { userId, platform: 'web', role }, 
     process.env.JWT_SECRET || 'hospitalink-secret', 
-    { expiresIn: '8h' } // Shorter for web sessions
+    { expiresIn: '8h' }
   );
 };
 
 // Doctor login for web dashboard
 const loginDoctorWeb = async (req, res) => {
   try {
-    const { nik, password, fingerprintData } = req.body;
+    const { nik, email, password, fingerprintData } = req.body;
 
-    console.log('🌐 Doctor web login attempt:', { nik, hasFingerprint: !!fingerprintData });
+    console.log('🌐 Doctor web login attempt:', { nik, email, hasFingerprint: !!fingerprintData });
 
     // Fingerprint login
     if (fingerprintData) {
@@ -40,18 +40,17 @@ const loginDoctorWeb = async (req, res) => {
         });
       }
 
-      const token = generateWebToken(user.id);
+      const token = generateWebToken(user.id, 'DOCTOR'); // Fix: Add role parameter
       await prisma.user.update({
         where: { id: user.id },
         data: { lastLogin: new Date() }
       });
 
-      // Set secure cookie for web
       res.cookie('doctorToken', token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'strict',
-        maxAge: 8 * 60 * 60 * 1000 // 8 hours
+        maxAge: 8 * 60 * 60 * 1000
       });
 
       return res.json({
@@ -63,7 +62,8 @@ const loginDoctorWeb = async (req, res) => {
             name: user.doctorProfile.name,
             specialty: user.doctorProfile.specialty,
             isOnDuty: user.doctorProfile.isOnDuty,
-            userId: user.id
+            userId: user.id,
+            role: 'DOCTOR'
           },
           loginMethod: 'fingerprint'
         },
@@ -71,73 +71,131 @@ const loginDoctorWeb = async (req, res) => {
     }
 
     // NIK + Password login
-    if (!nik || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'NIK and password are required',
-      });
-    }
-
-    if (!/^\d{16}$/.test(nik)) {
-      return res.status(400).json({
-        success: false,
-        message: 'NIK must be exactly 16 digits',
-      });
-    }
-
-    const user = await prisma.user.findFirst({
-      where: { 
-        nik: nik.trim(),
-        role: 'DOCTOR',
-        isActive: true
-      },
-      include: {
-        doctorProfile: true
+    if (nik && password) {
+      if (!/^\d{16}$/.test(nik)) {
+        return res.status(400).json({
+          success: false,
+          message: 'NIK must be exactly 16 digits',
+        });
       }
-    });
 
-    if (!user || !user.doctorProfile) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid NIK or doctor profile not found',
-      });
-    }
-
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid password',
-      });
-    }
-
-    const token = generateWebToken(user.id);
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { lastLogin: new Date() }
-    });
-
-    // Set secure cookie for web
-    res.cookie('doctorToken', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 8 * 60 * 60 * 1000 // 8 hours
-    });
-
-    res.json({
-      success: true,
-      message: 'Doctor web login successful',
-      data: { 
-        doctor: {
-          id: user.doctorProfile.id,
-          name: user.doctorProfile.name,
-          specialty: user.doctorProfile.specialty,
-          isOnDuty: user.doctorProfile.isOnDuty,
-          userId: user.id
+      const user = await prisma.user.findFirst({
+        where: { 
+          nik: nik.trim(),
+          role: 'DOCTOR',
+          isActive: true
         },
-        loginMethod: 'nik'
-      },
+        include: {
+          doctorProfile: true
+        }
+      });
+
+      if (!user || !user.doctorProfile) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid NIK or doctor profile not found',
+        });
+      }
+
+      const validPassword = await bcrypt.compare(password, user.password);
+      if (!validPassword) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid password',
+        });
+      }
+
+      const token = generateWebToken(user.id, 'DOCTOR'); // Fix: Add role parameter
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLogin: new Date() }
+      });
+
+      res.cookie('doctorToken', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 8 * 60 * 60 * 1000
+      });
+
+      return res.json({
+        success: true,
+        message: 'Doctor web login successful',
+        data: { 
+          doctor: {
+            id: user.doctorProfile.id,
+            name: user.doctorProfile.name,
+            specialty: user.doctorProfile.specialty,
+            isOnDuty: user.doctorProfile.isOnDuty,
+            userId: user.id,
+            role: 'DOCTOR'
+          },
+          loginMethod: 'nik'
+        },
+      });
+    }
+
+    // Email + Password login
+    if (email && password) {
+      const user = await prisma.user.findFirst({
+        where: { 
+          email: email.toLowerCase(),
+          role: 'DOCTOR',
+          isActive: true
+        },
+        include: {
+          doctorProfile: true
+        }
+      });
+
+      if (!user || !user.doctorProfile) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or doctor profile not found',
+        });
+      }
+
+      const validPassword = await bcrypt.compare(password, user.password);
+      if (!validPassword) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid password',
+        });
+      }
+
+      const token = generateWebToken(user.id, 'DOCTOR'); // Fix: Add role parameter
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLogin: new Date() }
+      });
+
+      res.cookie('doctorToken', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 8 * 60 * 60 * 1000
+      });
+
+      return res.json({
+        success: true,
+        message: 'Doctor web login successful',
+        data: { 
+          doctor: {
+            id: user.doctorProfile.id,
+            name: user.doctorProfile.name,
+            specialty: user.doctorProfile.specialty,
+            isOnDuty: user.doctorProfile.isOnDuty,
+            userId: user.id,
+            role: 'DOCTOR'
+          },
+          loginMethod: 'email'
+        },
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide NIK/Email and password, or fingerprint data',
     });
 
   } catch (error) {
@@ -145,6 +203,7 @@ const loginDoctorWeb = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Login failed',
+      error: error.message // Add error detail for debugging
     });
   }
 };
@@ -272,6 +331,7 @@ const getDoctorDashboard = async (req, res) => {
           specialty: doctor.specialty,
           isOnDuty: doctor.isOnDuty,
           isAvailable: doctor.isAvailable,
+          role: 'DOCTOR'
         },
         stats: {
           totalToday: queueStats._count.id || 0,

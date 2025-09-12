@@ -35,6 +35,7 @@ const handleValidationErrors = (req, res, next) => {
  */
 router.post('/login', 
   body('nik').optional().isLength({ min: 16, max: 16 }).withMessage('NIK must be 16 digits'),
+  body('email').optional().isEmail().withMessage('Valid email is required'),
   body('password').optional().isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
   body('fingerprintData').optional().isString().withMessage('Invalid fingerprint data'),
   handleValidationErrors,
