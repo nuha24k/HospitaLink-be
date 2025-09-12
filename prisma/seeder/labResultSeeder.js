@@ -12,7 +12,7 @@ const labResultSeeder = async () => {
   });
 
   const medicalRecords = await prisma.medicalRecord.findMany({
-    take: 3
+    take: 5
   });
 
   if (users.length === 0) {
@@ -20,11 +20,13 @@ const labResultSeeder = async () => {
     return;
   }
 
+  console.log(`  📊 Found ${users.length} users and ${medicalRecords.length} medical records`);
+
   const labResults = [
     // Blood test results
     {
       userId: users[0].id,
-      medicalRecordId: medicalRecords[0]?.id,
+      medicalRecordId: medicalRecords.length > 0 ? medicalRecords[0].id : null, // FIXED: Safe access
       testName: 'Darah Lengkap',
       testType: 'BLOOD',
       category: 'HEMATOLOGY',
@@ -51,8 +53,8 @@ const labResultSeeder = async () => {
     },
 
     {
-      userId: users[1].id,
-      medicalRecordId: medicalRecords[1]?.id,
+      userId: users[1] ? users[1].id : users[0].id, // FIXED: Safe access
+      medicalRecordId: medicalRecords.length > 1 ? medicalRecords[1].id : null, // FIXED
       testName: 'Gula Darah Sewaktu',
       testType: 'BLOOD',
       category: 'CHEMISTRY',
@@ -71,7 +73,8 @@ const labResultSeeder = async () => {
     },
 
     {
-      userId: users[2].id,
+      userId: users[2] ? users[2].id : users[0].id, // FIXED
+      medicalRecordId: medicalRecords.length > 2 ? medicalRecords[2].id : null, // FIXED
       testName: 'Fungsi Hati',
       testType: 'BLOOD',
       category: 'CHEMISTRY',
@@ -95,7 +98,8 @@ const labResultSeeder = async () => {
 
     // Urine test
     {
-      userId: users[3].id,
+      userId: users[3] ? users[3].id : users[0].id, // FIXED
+      medicalRecordId: medicalRecords.length > 3 ? medicalRecords[3].id : null, // FIXED
       testName: 'Urine Lengkap',
       testType: 'URINE',
       category: 'URINALYSIS',
@@ -122,7 +126,8 @@ const labResultSeeder = async () => {
 
     // X-Ray result
     {
-      userId: users[4].id,
+      userId: users[4] ? users[4].id : users[0].id, // FIXED
+      medicalRecordId: medicalRecords.length > 4 ? medicalRecords[4].id : null, // FIXED
       testName: 'Rontgen Thorax',
       testType: 'XRAY',
       category: 'RADIOLOGY',
@@ -147,6 +152,7 @@ const labResultSeeder = async () => {
     // Critical lab result
     {
       userId: users[0].id,
+      medicalRecordId: null, // No medical record needed for emergency tests
       testName: 'Troponin T',
       testType: 'BLOOD',
       category: 'CARDIAC_MARKERS',
@@ -166,7 +172,8 @@ const labResultSeeder = async () => {
 
     // Recent COVID test
     {
-      userId: users[1].id,
+      userId: users[1] ? users[1].id : users[0].id, // FIXED
+      medicalRecordId: null,
       testName: 'RT-PCR COVID-19',
       testType: 'PCR',
       category: 'MOLECULAR',
@@ -183,13 +190,19 @@ const labResultSeeder = async () => {
     }
   ];
 
+  let createdCount = 0;
   for (const labResult of labResults) {
-    await prisma.labResult.create({
-      data: labResult
-    });
+    try {
+      await prisma.labResult.create({
+        data: labResult
+      });
+      createdCount++;
+    } catch (error) {
+      console.log(`  ⚠️ Failed to create lab result ${labResult.testName}: ${error.message}`);
+    }
   }
 
-  console.log(`  ✅ ${labResults.length} lab results created`);
+  console.log(`  ✅ ${createdCount} lab results created`);
 };
 
 module.exports = labResultSeeder;

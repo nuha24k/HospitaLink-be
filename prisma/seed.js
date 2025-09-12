@@ -7,6 +7,7 @@ const doctorSeeder = require('./seeder/doctorSeeder');
 const consultationSeeder = require('./seeder/consultationSeeder');
 const queueSeeder = require('./seeder/queueSeeder');
 const appointmentSeeder = require('./seeder/appointmentSeeder');
+const prescriptionSeeder = require('./seeder/prescriptionSeeder'); 
 const medicalRecordSeeder = require('./seeder/medicalRecordSeeder');
 const labResultSeeder = require('./seeder/labResultSeeder');
 const notificationSeeder = require('./seeder/notificationSeeder');
@@ -49,27 +50,32 @@ const main = async () => {
     await consultationSeeder();
     console.log('✅ Consultations seeded successfully!\n');
 
-    // 7. Queues (Depends on users, doctors, consultations)
-    console.log('🎫 Seeding Queues...');
-    await queueSeeder();
-    console.log('✅ Queues seeded successfully!\n');
-
-    // 8. Appointments (Depends on users and doctors)
+    // 7. Appointments (Depends on users and doctors)
     console.log('📅 Seeding Appointments...');
     await appointmentSeeder();
     console.log('✅ Appointments seeded successfully!\n');
 
-    // 9. Medical Records (Depends on users, doctors, consultations)
+    // 8. Queues (Depends on users, doctors, consultations, appointments)
+    console.log('🎫 Seeding Queues...');
+    await queueSeeder();
+    console.log('✅ Queues seeded successfully!\n');
+
+    // 9. Prescriptions (NEW - Depends on users, doctors, consultations, appointments)
+    console.log('💊 Seeding Prescriptions...');
+    await prescriptionSeeder();
+    console.log('✅ Prescriptions seeded successfully!\n');
+
+    // 10. Medical Records (Depends on users, doctors, consultations)
     console.log('📋 Seeding Medical Records...');
     await medicalRecordSeeder();
     console.log('✅ Medical Records seeded successfully!\n');
 
-    // 10. Lab Results (Depends on users and medical records)
+    // 11. Lab Results (Depends on users and medical records)
     console.log('🔬 Seeding Lab Results...');
     await labResultSeeder();
     console.log('✅ Lab Results seeded successfully!\n');
 
-    // 11. Notifications (Depends on users)
+    // 12. Notifications (Depends on users)
     console.log('🔔 Seeding Notifications...');
     await notificationSeeder();
     console.log('✅ Notifications seeded successfully!\n');
@@ -77,11 +83,49 @@ const main = async () => {
     console.log('🎉 All seeding completed successfully!');
     console.log('📊 Database is ready for development!\n');
 
+    // Print summary
+    const summary = await getSeedingSummary();
+    console.log('📈 Seeding Summary:');
+    console.log(summary);
+
   } catch (error) {
     console.error('❌ Seeding failed:', error);
     process.exit(1);
   } finally {
     await prisma.$disconnect();
+  }
+};
+
+// Helper function to get seeding summary
+const getSeedingSummary = async () => {
+  try {
+    const counts = await Promise.all([
+      prisma.user.count(),
+      prisma.doctor.count(),
+      prisma.consultation.count(),
+      prisma.appointment.count(),
+      prisma.queue.count(),
+      prisma.prescription.count(),
+      prisma.medicalRecord.count(),
+      prisma.labResult.count(),
+      prisma.notification.count(),
+      prisma.familyMember.count(),
+    ]);
+
+    return `
+  👥 Users: ${counts[0]}
+  👨‍⚕️ Doctors: ${counts[1]}
+  💬 Consultations: ${counts[2]}
+  📅 Appointments: ${counts[3]}
+  🎫 Queues: ${counts[4]}
+  💊 Prescriptions: ${counts[5]}
+  📋 Medical Records: ${counts[6]}
+  🔬 Lab Results: ${counts[7]}
+  🔔 Notifications: ${counts[8]}
+  👨‍👩‍👧‍👦 Family Members: ${counts[9]}
+    `;
+  } catch (error) {
+    return '  ⚠️ Could not generate summary';
   }
 };
 

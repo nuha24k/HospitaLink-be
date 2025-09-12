@@ -60,11 +60,7 @@ const consultationSeeder = async () => {
           'Istirahat total'
         ]
       },
-      recommendations: [
-        'Konsultasi dengan dokter spesialis penyakit dalam',
-        'Lakukan pemeriksaan darah lengkap',
-        'Monitor suhu tubuh setiap 4 jam'
-      ],
+      recommendation: 'Konsultasi dengan dokter spesialis penyakit dalam. Lakukan pemeriksaan darah lengkap. Monitor suhu tubuh setiap 4 jam.', // FIXED: single field
       chatHistory: [
         {
           type: 'user',
@@ -114,12 +110,7 @@ const consultationSeeder = async () => {
           'Konsumsi vitamin C'
         ]
       },
-      recommendations: [
-        'Istirahat yang cukup',
-        'Perbanyak minum air putih hangat',
-        'Konsumsi vitamin C',
-        'Jika tidak membaik dalam 3 hari, konsultasi ke dokter'
-      ],
+      recommendation: 'Istirahat yang cukup, perbanyak minum air putih hangat, konsumsi vitamin C. Jika tidak membaik dalam 3 hari, konsultasi ke dokter.', // FIXED
       chatHistory: [
         {
           type: 'user',
@@ -160,12 +151,7 @@ const consultationSeeder = async () => {
         'Sesak napas',
         'Jantung berdebar'
       ],
-      recommendations: [
-        'Lakukan EKG',
-        'Pemeriksaan tekanan darah',
-        'Kurangi aktivitas berat',
-        'Kontrol kembali 1 minggu'
-      ],
+      recommendation: 'Lakukan EKG, pemeriksaan tekanan darah, kurangi aktivitas berat, kontrol kembali 1 minggu.', // FIXED
       chatHistory: [
         {
           type: 'user',
@@ -206,12 +192,7 @@ const consultationSeeder = async () => {
         'Mual',
         'Lemas'
       ],
-      recommendations: [
-        'Diet BRAT (Banana, Rice, Apple, Toast)',
-        'Perbanyak minum air putih',
-        'Istirahat cukup',
-        'Obat anti diare jika diperlukan'
-      ],
+      recommendation: 'Diet BRAT (Banana, Rice, Apple, Toast), perbanyak minum air putih, istirahat cukup, obat anti diare jika diperlukan.', // FIXED
       chatHistory: [
         {
           type: 'user',
@@ -252,7 +233,7 @@ const consultationSeeder = async () => {
         'Pusing',
         'Mata lelah'
       ],
-      recommendations: [],
+      recommendation: null, // FIXED: empty recommendation for ongoing consultation
       chatHistory: [
         {
           type: 'user',
@@ -299,12 +280,7 @@ const consultationSeeder = async () => {
           'Hubungi ambulans jika perlu'
         ]
       },
-      recommendations: [
-        'EMERGENCY: Segera ke IGD terdekat',
-        'Jangan berkendara sendiri',
-        'Hubungi keluarga',
-        'Siapkan riwayat penyakit'
-      ],
+      recommendation: 'EMERGENCY: Segera ke IGD terdekat. Jangan berkendara sendiri. Hubungi keluarga. Siapkan riwayat penyakit.', // FIXED
       chatHistory: [
         {
           type: 'user',

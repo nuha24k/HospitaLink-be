@@ -29,6 +29,29 @@ const systemConfigSeeder = async () => {
       isEditable: true
     },
 
+    // Prescription Settings (NEW)
+    {
+      key: 'PRESCRIPTION_EXPIRY_DAYS',
+      value: '30',
+      description: 'Default prescription expiry in days',
+      category: 'PRESCRIPTION',
+      isEditable: true
+    },
+    {
+      key: 'PRESCRIPTION_CODE_PREFIX',
+      value: 'RX',
+      description: 'Prefix for prescription codes',
+      category: 'PRESCRIPTION',
+      isEditable: true
+    },
+    {
+      key: 'PRESCRIPTION_ALLOW_PARTIAL_DISPENSING',
+      value: 'true',
+      description: 'Allow partial medication dispensing',
+      category: 'PRESCRIPTION',
+      isEditable: true
+    },
+
     // Notification Settings
     {
       key: 'NOTIFICATION_PUSH_ENABLED',
@@ -96,6 +119,13 @@ const systemConfigSeeder = async () => {
       key: 'PAYMENT_CREDIT_CARD_ENABLED',
       value: 'true',
       description: 'Enable credit card payment',
+      category: 'PAYMENT',
+      isEditable: true
+    },
+    {
+      key: 'PAYMENT_QRIS_ENABLED',
+      value: 'true',
+      description: 'Enable QRIS payment method',
       category: 'PAYMENT',
       isEditable: true
     },
