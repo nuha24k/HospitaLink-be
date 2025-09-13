@@ -4,6 +4,10 @@ const router = express.Router();
 // Import controllers
 const authController = require('../../../controllers/web/admin/authController');
 
+// Import route modules
+const patientRoutes = require('./patientRoute');
+const doctorRoutes = require('./doctorRoute');
+
 // Import middlewares
 const { authWebMiddleware, requireRole } = require('../../../middlewares/auth');
 const { body } = require('express-validator');
@@ -95,5 +99,23 @@ router.post('/update-profile',
   handleValidationErrors,
   authController.updateProfile
 );
+
+// ============================================================================
+// SUB-ROUTE MODULES
+// ============================================================================
+
+/**
+ * @route   /api/admin/patients/*
+ * @desc    All patient management routes
+ * @access  Admin only
+ */
+router.use('/patients', patientRoutes);
+
+/**
+ * @route   /api/admin/doctors/*
+ * @desc    All doctor management routes
+ * @access  Admin only
+ */
+router.use('/doctors', doctorRoutes);
 
 module.exports = router;
