@@ -6,6 +6,7 @@ const authController = require('../../../controllers/web/admin/authController');
 
 // Import route modules
 const patientRoutes = require('./patientRoute');
+const doctorRoutes = require('./doctorRoute');
 
 // Import middlewares
 const { authWebMiddleware, requireRole } = require('../../../middlewares/auth');
@@ -109,5 +110,12 @@ router.post('/update-profile',
  * @access  Admin only
  */
 router.use('/patients', patientRoutes);
+
+/**
+ * @route   /api/admin/doctors/*
+ * @desc    All doctor management routes
+ * @access  Admin only
+ */
+router.use('/doctors', doctorRoutes);
 
 module.exports = router;
