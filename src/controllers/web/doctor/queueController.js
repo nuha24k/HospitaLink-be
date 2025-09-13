@@ -2,7 +2,6 @@ const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
 
-// Get today's queue for doctor web
 const getTodayQueueWeb = async (req, res) => {
   try {
     const today = new Date();
@@ -11,17 +10,8 @@ const getTodayQueueWeb = async (req, res) => {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Get current doctor's profile
     const currentDoctor = await prisma.doctor.findUnique({
       where: { userId: req.user.id },
-      include: {
-        user: {
-          select: {
-            fullName: true,
-            isActive: true,
-          },
-        },
-      },
     });
 
     if (!currentDoctor) {
@@ -31,7 +21,6 @@ const getTodayQueueWeb = async (req, res) => {
       });
     }
 
-    // Get queues - filter by doctor if specialist, show all if general doctor
     const whereCondition = {
       queueDate: {
         gte: today,
@@ -39,7 +28,6 @@ const getTodayQueueWeb = async (req, res) => {
       },
     };
 
-    // If specialist doctor, only show assigned queues
     if (currentDoctor.specialty !== 'Dokter Umum') {
       whereCondition.doctorId = currentDoctor.id;
     }
@@ -78,7 +66,6 @@ const getTodayQueueWeb = async (req, res) => {
       },
     });
 
-    // Categorize queues
     const currentQueue = queues.find(q => q.status === 'IN_PROGRESS');
     const waitingQueues = queues.filter(q => q.status === 'WAITING');
     const completedQueues = queues.filter(q => q.status === 'COMPLETED');
@@ -112,16 +99,8 @@ const getTodayQueueWeb = async (req, res) => {
   }
 };
 
-// Call next patient (web version)
-const callNextPatientWeb = async (req, res) => {
+const getActiveQueue = async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    // Get current doctor
     const currentDoctor = await prisma.doctor.findUnique({
       where: { userId: req.user.id },
     });
@@ -133,7 +112,224 @@ const callNextPatientWeb = async (req, res) => {
       });
     }
 
-    // Complete current in-progress queue first
+    const activeQueue = await prisma.queue.findFirst({
+      where: {
+        doctorId: currentDoctor.id,
+        status: 'IN_PROGRESS',
+      },
+      include: {
+        user: {
+          select: {
+            fullName: true,
+            nik: true,
+            phone: true,
+            gender: true,
+            dateOfBirth: true,
+          },
+        },
+        consultation: {
+          select: {
+            type: true,
+            severity: true,
+            symptoms: true,
+            aiAnalysis: true,
+            recommendation: true,
+          },
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Active queue retrieved successfully',
+      data: {
+        activeQueue: activeQueue || null,
+        isOnDuty: currentDoctor.isOnDuty,
+      },
+    });
+  } catch (error) {
+    console.error('Get active queue error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve active queue',
+    });
+  }
+};
+
+const getWaitingQueues = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const currentDoctor = await prisma.doctor.findUnique({
+      where: { userId: req.user.id },
+    });
+
+    if (!currentDoctor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Doctor profile not found',
+      });
+    }
+
+    const whereCondition = {
+      status: 'WAITING',
+      queueDate: {
+        gte: today,
+        lt: tomorrow,
+      },
+    };
+
+    if (currentDoctor.specialty === 'Dokter Umum') {
+      whereCondition.OR = [
+        { doctorId: null },
+        { doctorId: currentDoctor.id },
+      ];
+    } else {
+      whereCondition.doctorId = currentDoctor.id;
+    }
+
+    const waitingQueues = await prisma.queue.findMany({
+      where: whereCondition,
+      include: {
+        user: {
+          select: {
+            fullName: true,
+            nik: true,
+            phone: true,
+            gender: true,
+          },
+        },
+        consultation: {
+          select: {
+            type: true,
+            severity: true,
+            symptoms: true,
+          },
+        },
+      },
+      orderBy: [
+        { isPriority: 'desc' },
+        { position: 'asc' },
+      ],
+    });
+
+    res.json({
+      success: true,
+      message: 'Waiting queues retrieved successfully',
+      data: {
+        waitingQueues,
+        total: waitingQueues.length,
+      },
+    });
+  } catch (error) {
+    console.error('Get waiting queues error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve waiting queues',
+    });
+  }
+};
+
+const getQueueHistory = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, startDate, endDate } = req.query;
+    const skip = (page - 1) * limit;
+
+    const currentDoctor = await prisma.doctor.findUnique({
+      where: { userId: req.user.id },
+    });
+
+    if (!currentDoctor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Doctor profile not found',
+      });
+    }
+
+    const whereCondition = {
+      doctorId: currentDoctor.id,
+      status: 'COMPLETED',
+    };
+
+    if (startDate || endDate) {
+      whereCondition.queueDate = {};
+      if (startDate) whereCondition.queueDate.gte = new Date(startDate);
+      if (endDate) whereCondition.queueDate.lte = new Date(endDate);
+    }
+
+    const [queues, total] = await Promise.all([
+      prisma.queue.findMany({
+        where: whereCondition,
+        include: {
+          user: {
+            select: {
+              fullName: true,
+              nik: true,
+              phone: true,
+            },
+          },
+          consultation: {
+            select: {
+              type: true,
+              severity: true,
+              symptoms: true,
+            },
+          },
+        },
+        orderBy: {
+          completedTime: 'desc',
+        },
+        skip,
+        take: parseInt(limit),
+      }),
+      prisma.queue.count({ where: whereCondition }),
+    ]);
+
+    res.json({
+      success: true,
+      message: 'Queue history retrieved successfully',
+      data: {
+        queues,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Get queue history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve queue history',
+    });
+  }
+};
+
+const callNextPatientWeb = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const currentDoctor = await prisma.doctor.findUnique({
+      where: { userId: req.user.id },
+    });
+
+    if (!currentDoctor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Doctor profile not found',
+      });
+    }
+
     await prisma.queue.updateMany({
       where: {
         status: 'IN_PROGRESS',
@@ -149,17 +345,14 @@ const callNextPatientWeb = async (req, res) => {
       },
     });
 
-    // Set doctor as not on duty temporarily
     await prisma.doctor.update({
       where: { id: currentDoctor.id },
       data: { isOnDuty: false },
     });
 
-    // Get next waiting patient
     let nextQueue;
 
     if (currentDoctor.specialty === 'Dokter Umum') {
-      // For general doctors: Get unassigned queue or general consultation
       nextQueue = await prisma.queue.findFirst({
         where: {
           status: 'WAITING',
@@ -168,8 +361,8 @@ const callNextPatientWeb = async (req, res) => {
             lt: tomorrow,
           },
           OR: [
-            { doctorId: null }, // Unassigned
-            { doctorId: currentDoctor.id }, // Already assigned to this doctor
+            { doctorId: null },
+            { doctorId: currentDoctor.id },
           ],
         },
         include: {
@@ -198,7 +391,6 @@ const callNextPatientWeb = async (req, res) => {
         },
       });
     } else {
-      // For specialist doctors: Only get assigned queues
       nextQueue = await prisma.queue.findFirst({
         where: {
           status: 'WAITING',
@@ -246,7 +438,6 @@ const callNextPatientWeb = async (req, res) => {
       });
     }
 
-    // Auto-assign doctor if not assigned
     if (!nextQueue.doctorId) {
       await prisma.queue.update({
         where: { id: nextQueue.id },
@@ -254,7 +445,6 @@ const callNextPatientWeb = async (req, res) => {
       });
     }
 
-    // Call next patient
     const calledQueue = await prisma.queue.update({
       where: { id: nextQueue.id },
       data: {
@@ -291,13 +481,11 @@ const callNextPatientWeb = async (req, res) => {
       },
     });
 
-    // Set doctor as on duty
     await prisma.doctor.update({
       where: { id: currentDoctor.id },
       data: { isOnDuty: true },
     });
 
-    // Create notification for patient
     await prisma.notification.create({
       data: {
         userId: calledQueue.userId,
@@ -331,7 +519,6 @@ const callNextPatientWeb = async (req, res) => {
   }
 };
 
-// Complete consultation (web version)
 const completeConsultationWeb = async (req, res) => {
   try {
     const { queueId, notes, diagnosis, treatment, prescriptions } = req.body;
@@ -370,12 +557,10 @@ const completeConsultationWeb = async (req, res) => {
       });
     }
 
-    // Get current doctor
     const currentDoctor = await prisma.doctor.findUnique({
       where: { userId: req.user.id },
     });
 
-    // Complete the queue
     const completedQueue = await prisma.queue.update({
       where: { id: queueId },
       data: {
@@ -393,7 +578,6 @@ const completeConsultationWeb = async (req, res) => {
       },
     });
 
-    // Create medical record if provided
     if (diagnosis || treatment) {
       await prisma.medicalRecord.create({
         data: {
@@ -406,12 +590,11 @@ const completeConsultationWeb = async (req, res) => {
           treatment: treatment || 'Treatment provided',
           symptoms: queue.consultation?.symptoms || [],
           notes: notes,
-          paymentStatus: 'PAID', // Assume paid for now
+          paymentStatus: 'PAID',
         },
       });
     }
 
-    // Create digital prescription if provided
     if (prescriptions && prescriptions.length > 0) {
       const prescriptionCode = `RX_${Date.now()}_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
       
@@ -423,18 +606,16 @@ const completeConsultationWeb = async (req, res) => {
           prescriptionCode,
           medications: prescriptions,
           instructions: notes,
-          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         },
       });
     }
 
-    // Set doctor as not on duty
     await prisma.doctor.update({
       where: { id: currentDoctor.id },
       data: { isOnDuty: false },
     });
 
-    // Create completion notification
     await prisma.notification.create({
       data: {
         userId: queue.userId,
@@ -464,7 +645,6 @@ const completeConsultationWeb = async (req, res) => {
   }
 };
 
-// Skip patient (for web)
 const skipPatientWeb = async (req, res) => {
   try {
     const { queueId, reason } = req.body;
@@ -480,7 +660,6 @@ const skipPatientWeb = async (req, res) => {
       });
     }
 
-    // Move to end of queue
     const maxPosition = await prisma.queue.aggregate({
       where: {
         queueDate: queue.queueDate,
@@ -500,7 +679,6 @@ const skipPatientWeb = async (req, res) => {
       },
     });
 
-    // Set doctor as not on duty
     const currentDoctor = await prisma.doctor.findUnique({
       where: { userId: req.user.id },
     });
@@ -526,6 +704,9 @@ const skipPatientWeb = async (req, res) => {
 
 module.exports = {
   getTodayQueueWeb,
+  getActiveQueue,
+  getWaitingQueues,
+  getQueueHistory,
   callNextPatientWeb,
   completeConsultationWeb,
   skipPatientWeb,

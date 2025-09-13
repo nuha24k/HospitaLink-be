@@ -1,4 +1,4 @@
-const { body, query, param } = require('express-validator');
+const { body, query, param, validationResult } = require('express-validator');
 
 // Auth validations
 const registerValidation = [
@@ -94,6 +94,18 @@ const paginationValidation = [
     .withMessage('Limit must be between 1 and 100'),
 ];
 
+const handleValidationErrors = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors: errors.array(),
+    });
+  }
+  next();
+};
+
 module.exports = {
   registerValidation,
   loginValidation,
@@ -103,4 +115,5 @@ module.exports = {
   queueValidation,
   idValidation,
   paginationValidation,
+  handleValidationErrors,
 };
