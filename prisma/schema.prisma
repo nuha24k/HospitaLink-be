@@ -3,6 +3,7 @@
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["fullTextIndex"]
 }
 
 datasource db {
@@ -181,6 +182,50 @@ model HospitalConfig {
   updatedAt         DateTime  @updatedAt
 
   @@map("hospital_config")
+}
+
+// ============================================================================
+// MEDICATION MANAGEMENT (MVP untuk farmasi)
+// ============================================================================
+
+model Medication {
+  id              String    @id @default(uuid())
+  medicationCode  String    @unique 
+  genericName     String    
+  brandName       String?   
+  category        String    
+  dosageForm      String    
+  strength        String    
+  unit            String   
+  manufacturer    String?   
+  description     String?   @db.Text
+  indications     String?   @db.Text 
+  contraindications String? @db.Text 
+  sideEffects     String?   @db.Text 
+  dosageInstructions String? @db.Text 
+  
+  // Pricing & Stock (simplified for MVP)
+  pricePerUnit    Decimal   @db.Decimal(10, 2)
+  stock           Int       @default(0)
+  minStock        Int       @default(5)
+  maxStock        Int       @default(1000)
+  
+  // Status & Control
+  isActive        Boolean   @default(true)
+  requiresPrescription Boolean @default(true)
+  isControlled    Boolean   @default(false) // Obat keras/narkotika
+  
+  // Metadata
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdBy       String?   // Staff ID yang input
+  
+  @@map("medications")
+  @@index([medicationCode])
+  @@index([genericName])
+  @@index([category])
+  @@index([isActive])
+  @@fulltext([genericName, brandName])
 }
 
 // ============================================================================
