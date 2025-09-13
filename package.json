@@ -7,7 +7,8 @@
     "dev": "nodemon src/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "seed": "node prisma/seed.js"
+    "seed": "node prisma/seed.js",
+    "seed:medications": "node prisma/seeder/seed-medications.js"
   },
   "keywords": [],
   "author": "",
