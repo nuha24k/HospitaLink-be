@@ -526,7 +526,7 @@ const createPatient = async (req, res) => {
             error: "Internal server error",
             message: "Failed to create patient"
         });
-    }
+    } 
 };
 
 /**
@@ -803,7 +803,7 @@ const getPatientStats = async (req, res) => {
 module.exports = {
     getPatients,
     getPatientById,
-    getPatientStats, // Export the new function
+    getPatientStats,
     createPatient,
     updatePatient,
     deletePatient,

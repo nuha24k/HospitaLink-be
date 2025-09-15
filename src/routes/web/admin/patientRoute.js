@@ -82,8 +82,9 @@ router.post('/',
   body('password')
     .isLength({ min: 6 })
     .withMessage('Password must be at least 6 characters')
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-    .withMessage('Password must contain at least one lowercase, one uppercase, and one digit'),
+    // Make password requirement more flexible - OPTIONAL
+    .matches(/^(?=.*[a-zA-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one letter and one digit'),
   body('fullName')
     .isString()
     .isLength({ min: 2, max: 100 })
@@ -94,8 +95,8 @@ router.post('/',
   // Optional field validation
   body('phone')
     .optional()
-    .isMobilePhone('id-ID')
-    .withMessage('Invalid Indonesian phone number format'),
+    .matches(/^(08|8)[0-9]{8,11}$/)
+    .withMessage('Invalid Indonesian phone number format (example: 08123456789)'),
   body('nik')
     .optional()
     .isLength({ min: 16, max: 16 })
@@ -149,8 +150,8 @@ router.put('/:id',
     .withMessage('Full name can only contain letters, spaces, dots, and hyphens'),
   body('phone')
     .optional()
-    .isMobilePhone('id-ID')
-    .withMessage('Invalid Indonesian phone number format'),
+    .matches(/^(08|8)[0-9]{8,11}$/)
+    .withMessage('Invalid Indonesian phone number format (example: 08123456789)'),
   body('nik')
     .optional()
     .isLength({ min: 16, max: 16 })
