@@ -20,8 +20,8 @@ app.use(cors({
     'http://127.0.0.1:5173'
   ],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'ngrok-skip-browser-warning'],
 }));
 
 // Add preflight handling
@@ -61,8 +61,10 @@ app.get('/health', (req, res) => {
 // Import routes
 const authRoutes = require('./routes/authRoute');
 const userRoutes = require('./routes/userRoute');
-const queueRoutes = require('./routes/queueRoute');
+const queueRoutes = require('./routes/mobile/queueRoute');
 const consultationRoutes = require('./routes/mobile/consultationRoute');
+const transactionRoutes = require('./routes/transactionRoute');
+const mobileTransactionRoutes = require('./routes/mobile/transactionRoute');
 
 // Import web routes
 const webDoctorRoutes = require('./routes/web/doctor');
@@ -71,14 +73,28 @@ const webAdminRoutes = require('./routes/web/admin');
 // Import mobile routes
 const mobileDashboardRoutes = require('./routes/mobile/dashboardRoute');
 const mobileNotificationRoutes = require('./routes/mobile/notificationRoute');
+const medicalHistoryRoutes = require('./routes/mobile/medicalHistoryRoute');
+const qrRoutes = require('./routes/mobile/qrRoute');
+const prescriptionRoutes = require('./routes/mobile/prescriptionRoute');
 
-// API Routes (Mobile)
+// API Routes (Mobile) - Add transaction routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/consultations', consultationRoutes);
 app.use('/api/queues', queueRoutes);
 app.use('/api/dashboard', mobileDashboardRoutes); 
 app.use('/api/notifications', mobileNotificationRoutes);
+app.use('/api/mobile/medical-history', medicalHistoryRoutes);
+app.use('/api/mobile/prescriptions', prescriptionRoutes);
+app.use('/api/qr', qrRoutes);
+
+// Transaction routes
+app.use('/api/transactions', transactionRoutes);
+app.use('/api/mobile/transactions', mobileTransactionRoutes);
+
+// Legacy routes for backward compatibility
+app.use('/api/medical-records', medicalHistoryRoutes);
+app.use('/api/prescriptions', prescriptionRoutes);
 
 // Web Routes (Dashboard) - Add logging
 app.use('/api/web/doctor', (req, res, next) => {
@@ -103,6 +119,11 @@ app.get('/api', (req, res) => {
         users: '/api/users',
         consultations: '/api/consultations',
         queues: '/api/queues',
+        medicalHistory: '/api/mobile/medical-history',
+        prescriptions: '/api/mobile/prescriptions',
+        dashboard: '/api/dashboard',
+        notifications: '/api/notifications',
+        qr: '/api/qr',
       },
       web: {
         doctor: '/api/web/doctor',

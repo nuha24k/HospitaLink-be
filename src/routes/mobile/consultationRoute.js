@@ -152,6 +152,23 @@ router.post('/accept-early',
   consultationController.acceptEarlyConsultation
 );
 
+// Mark consultation completed by user
+router.post('/complete', 
+  authMiddleware,
+  body('consultationId').isUUID().withMessage('Valid consultation ID is required'),
+  body('reason').optional().isString(),
+  handleValidationErrors,
+  consultationController.markConsultationCompleted
+);
+
+// Get consultation details
+router.get('/details/:consultationId', 
+  authMiddleware,
+  param('consultationId').isUUID().withMessage('Valid consultation ID is required'),
+  handleValidationErrors,
+  consultationController.getConsultationDetails
+);
+
 // Get active consultations (ongoing/pending)
 router.get('/active', authMiddleware, consultationController.getActiveConsultations);
 

@@ -60,11 +60,28 @@ enum PaymentStatus {
   FAILED
 }
 
+enum TransactionType {
+  PRESCRIPTION_PAYMENT
+  CONSULTATION_PAYMENT
+  APPOINTMENT_FEE
+}
+
+enum TransactionStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
 enum PaymentMethod {
   CASH
   BPJS
   INSURANCE
   CREDIT_CARD
+  DEBIT_CARD
+  BANK_TRANSFER
+  E_WALLET
 }
 
 enum NotificationType {
@@ -122,6 +139,7 @@ model User {
   notifications    Notification[]
   consultations    Consultation[]
   prescriptions    Prescription[]
+  transactions      Transaction[]
   doctorProfile    Doctor?
 
   @@map("users")
@@ -182,6 +200,36 @@ model HospitalConfig {
   updatedAt         DateTime  @updatedAt
 
   @@map("hospital_config")
+}
+
+// ============================================================================
+// TRANSACTION MANAGEMENT (MVP untuk pembayaran)
+// ============================================================================
+
+model Transaction {
+  id                String             @id @default(cuid())
+  userId            String
+  type              TransactionType
+  status            TransactionStatus  @default(PENDING)
+  amount            Float
+  paymentMethod     PaymentMethod?
+  description       String?
+  
+  // Relations
+  prescriptionId    String?            @unique
+  consultationId    String?            @unique
+  
+  // References
+  user              User               @relation(fields: [userId], references: [id])
+  prescription      Prescription?      @relation(fields: [prescriptionId], references: [id])
+  consultation      Consultation?      @relation(fields: [consultationId], references: [id])
+  
+  // Metadata
+  paidAt            DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  
+  @@map("transactions")
 }
 
 // ============================================================================
@@ -288,6 +336,8 @@ model Consultation {
   isCompleted       Boolean   @default(false)
   rating            Int?
   feedback          String?   @db.Text
+  isPaid            Boolean          @default(false)
+  paidAt            DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -296,6 +346,7 @@ model Consultation {
   doctor            Doctor?   @relation(fields: [doctorId], references: [id])
   appointment       Appointment?
   medicalRecord     MedicalRecord?
+  transaction       Transaction?
   digitalPrescriptions Prescription[] // Fixed: Add opposite relation
   queues            Queue[]   // Fixed: Add opposite relation
 
@@ -330,12 +381,14 @@ model Prescription {
   expiresAt       DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  paidAt            DateTime?
 
   // Relations - FIXED
   user            User      @relation(fields: [userId], references: [id])
   doctor          Doctor    @relation(fields: [doctorId], references: [id])
   consultation    Consultation? @relation(fields: [consultationId], references: [id]) // Fixed: Now has opposite
   appointment     Appointment? @relation(fields: [appointmentId], references: [id])
+  transaction       Transaction?
 
   @@map("prescriptions")
   @@index([userId])

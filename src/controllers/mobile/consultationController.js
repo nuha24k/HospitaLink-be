@@ -122,6 +122,135 @@ const aiScreening = async (req, res) => {
   }
 };
 
+const markConsultationCompleted = async (req, res) => {
+  try {
+    const { consultationId, reason = 'USER_COMPLETED' } = req.body;
+    const userId = req.user.id;
+
+    console.log('✅ Marking consultation completed:', { consultationId, reason, userId });
+
+    const consultation = await prisma.consultation.findFirst({
+      where: {
+        id: consultationId,
+        userId,
+      }
+    });
+
+    if (!consultation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Consultation not found'
+      });
+    }
+
+    // Update consultation as completed
+    const updatedConsultation = await prisma.consultation.update({
+      where: { id: consultationId },
+      data: {
+        isCompleted: true,
+        recommendation: consultation.recommendation || 'USER_COMPLETED',
+        doctorNotes: consultation.doctorNotes || `Completed by user: ${reason}`,
+        updatedAt: new Date()
+      }
+    });
+
+    // Create notification
+    await prisma.notification.create({
+      data: {
+        userId,
+        title: 'Konsultasi Diselesaikan',
+        message: 'Konsultasi telah ditandai selesai dan disimpan dalam riwayat',
+        type: 'CONSULTATION',
+        priority: 'LOW'
+      }
+    });
+
+    console.log('✅ Consultation marked completed:', consultationId);
+
+    res.json({
+      success: true,
+      message: 'Consultation marked as completed',
+      data: {
+        consultationId: updatedConsultation.id,
+        isCompleted: true,
+        completedAt: updatedConsultation.updatedAt
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Mark consultation completed error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to mark consultation completed',
+      error: error.message
+    });
+  }
+};
+
+const getConsultationDetails = async (req, res) => {
+  try {
+    const { consultationId } = req.params;
+    const userId = req.user.id;
+
+    console.log('📋 Getting consultation details:', { consultationId, userId });
+
+    const consultation = await prisma.consultation.findFirst({
+      where: {
+        id: consultationId,
+        userId,
+      },
+      include: {
+        doctor: {
+          select: {
+            id: true,
+            name: true,
+            specialty: true
+          }
+        }
+      }
+    });
+
+    if (!consultation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Consultation not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Consultation details retrieved',
+      data: {
+        consultation: {
+          id: consultation.id,
+          type: consultation.type,
+          severity: consultation.severity,
+          urgency: consultation.urgency,
+          symptoms: consultation.symptoms,
+          chatHistory: consultation.chatHistory,
+          aiAnalysis: consultation.aiAnalysis,
+          isCompleted: consultation.isCompleted,
+          recommendation: consultation.recommendation,
+          doctorNotes: consultation.doctorNotes,
+          consultationFee: consultation.consultationFee,
+          paymentStatus: consultation.paymentStatus,
+          createdAt: consultation.createdAt,
+          updatedAt: consultation.updatedAt,
+          doctor: consultation.doctor
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get consultation details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get consultation details',
+      error: error.message
+    });
+  }
+};
+
 const continueAIConsultation = async (req, res) => {
   try {
     const { consultationId, userResponse, chatHistory } = req.body;
@@ -1592,6 +1721,8 @@ module.exports = {
   getActiveConsultations,
   rescheduleConsultation,
   continueAIConsultation,
+  markConsultationCompleted,
+  getConsultationDetails,
   
   // Keep old names for backward compatibility
   requestDoctorConsultation: requestDoctorChat,
