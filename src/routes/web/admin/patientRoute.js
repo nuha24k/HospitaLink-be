@@ -29,8 +29,15 @@ router.use(authWebMiddleware); // All routes below require web authentication
 router.use(requireRole(['ADMIN'])); // Only admins can access
 
 // ============================================================================
-// PATIENT MANAGEMENT ROUTES
+// SPECIFIC ROUTES FIRST (before parameterized routes)
 // ============================================================================
+
+/**
+ * @route   GET /api/web/admin/patients/next-number
+ * @desc    Get next patient number for QR code
+ * @access  Admin only
+ */
+router.get('/next-number', patientController.getNextPatientNumber);
 
 /**
  * @route   GET /api/web/admin/patients/stats
@@ -38,6 +45,27 @@ router.use(requireRole(['ADMIN'])); // Only admins can access
  * @access  Admin only
  */
 router.get('/stats', patientController.getPatientStats);
+
+/**
+ * @route   GET /api/web/admin/patients/test
+ * @desc    Test patient routes
+ * @access  Admin only
+ */
+router.get('/test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Patient web routes working',
+    timestamp: new Date().toISOString(),
+    user: {
+      id: req.user?.id,
+      role: req.user?.role
+    }
+  });
+});
+
+// ============================================================================
+// GENERAL ROUTES
+// ============================================================================
 
 /**
  * @route   GET /api/web/admin/patients
@@ -57,8 +85,12 @@ router.get('/',
   patientController.getPatients
 );
 
+// ============================================================================
+// PARAMETERIZED ROUTES (should be after specific routes)
+// ============================================================================
+
 /**
- * @route   GET /api/admin/patients/:id
+ * @route   GET /api/web/admin/patients/:id
  * @desc    Get patient by ID with detailed information
  * @access  Admin only
  */
@@ -69,70 +101,7 @@ router.get('/:id',
 );
 
 /**
- * @route   POST /api/admin/patients
- * @desc    Create a new patient
- * @access  Admin only
- */
-router.post('/',
-  // Required field validation
-  body('email')
-    .isEmail()
-    .normalizeEmail()
-    .withMessage('Valid email is required'),
-  body('password')
-    .isLength({ min: 6 })
-    .withMessage('Password must be at least 6 characters')
-    // Make password requirement more flexible - OPTIONAL
-    .matches(/^(?=.*[a-zA-Z])(?=.*\d)/)
-    .withMessage('Password must contain at least one letter and one digit'),
-  body('fullName')
-    .isString()
-    .isLength({ min: 2, max: 100 })
-    .withMessage('Full name must be between 2 and 100 characters')
-    .matches(/^[a-zA-Z\s.-]+$/)
-    .withMessage('Full name can only contain letters, spaces, dots, and hyphens'),
-  
-  // Optional field validation
-  body('phone')
-    .optional()
-    .matches(/^(08|8)[0-9]{8,11}$/)
-    .withMessage('Invalid Indonesian phone number format (example: 08123456789)'),
-  body('nik')
-    .optional()
-    .isLength({ min: 16, max: 16 })
-    .isNumeric()
-    .withMessage('NIK must be exactly 16 digits'),
-  body('gender')
-    .optional()
-    .isIn(['MALE', 'FEMALE'])
-    .withMessage('Gender must be MALE or FEMALE'),
-  body('dateOfBirth')
-    .optional()
-    .isISO8601()
-    .withMessage('Date of birth must be a valid date')
-    .custom((value) => {
-      const birthDate = new Date(value);
-      const today = new Date();
-      const age = today.getFullYear() - birthDate.getFullYear();
-      if (age > 150 || birthDate > today) {
-        throw new Error('Invalid date of birth');
-      }
-      return true;
-    }),
-  
-  // Address field validation
-  body('street').optional().isString().isLength({ max: 200 }).withMessage('Street address too long'),
-  body('village').optional().isString().isLength({ max: 100 }).withMessage('Village name too long'),
-  body('district').optional().isString().isLength({ max: 100 }).withMessage('District name too long'),
-  body('regency').optional().isString().isLength({ max: 100 }).withMessage('Regency name too long'),
-  body('province').optional().isString().isLength({ max: 100 }).withMessage('Province name too long'),
-  
-  handleValidationErrors,
-  patientController.createPatient
-);
-
-/**
- * @route   PUT /api/admin/patients/:id
+ * @route   PUT /api/web/admin/patients/:id
  * @desc    Update patient information
  * @access  Admin only
  */
@@ -191,7 +160,7 @@ router.put('/:id',
 );
 
 /**
- * @route   DELETE /api/admin/patients/:id
+ * @route   DELETE /api/web/admin/patients/:id
  * @desc    Delete patient (soft delete)
  * @access  Admin only
  */
@@ -202,28 +171,80 @@ router.delete('/:id',
 );
 
 /**
- * @route   GET /api/admin/patients/test
- * @desc    Test patient routes
+ * @route   POST /api/web/admin/patients
+ * @desc    Create a new patient
  * @access  Admin only
  */
-router.get('/test', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Patient web routes working',
-    timestamp: new Date().toISOString(),
-    user: {
-      id: req.user?.id,
-      role: req.user?.role
-    }
-  });
-});
+router.post('/',
+  // Required field validation
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Valid email is required'),
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters')
+    .matches(/^(?=.*[a-zA-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one letter and one digit'),
+  body('fullName')
+    .isString()
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Full name must be between 2 and 100 characters')
+    .matches(/^[a-zA-Z\s.-]+$/)
+    .withMessage('Full name can only contain letters, spaces, dots, and hyphens'),
+  
+  // Optional field validation
+  body('phone')
+    .optional()
+    .matches(/^(08|8)[0-9]{8,11}$/)
+    .withMessage('Invalid Indonesian phone number format (example: 08123456789)'),
+  body('nik')
+    .optional()
+    .isLength({ min: 16, max: 16 })
+    .isNumeric()
+    .withMessage('NIK must be exactly 16 digits'),
+  body('gender')
+    .optional()
+    .isIn(['MALE', 'FEMALE'])
+    .withMessage('Gender must be MALE or FEMALE'),
+  body('dateOfBirth')
+    .optional()
+    .isISO8601()
+    .withMessage('Date of birth must be a valid date')
+    .custom((value) => {
+      const birthDate = new Date(value);
+      const today = new Date();
+      const age = today.getFullYear() - birthDate.getFullYear();
+      if (age > 150 || birthDate > today) {
+        throw new Error('Invalid date of birth');
+      }
+      return true;
+    }),
+  
+  // QR Code validation
+  body('qrCode')
+    .optional()
+    .isString()
+    .matches(/^USER_\d{3}$/)
+    .withMessage('QR Code must follow format USER_XXX (e.g., USER_001)'),
+  
+  // Address field validation
+  body('street').optional().isString().isLength({ max: 200 }).withMessage('Street address too long'),
+  body('village').optional().isString().isLength({ max: 100 }).withMessage('Village name too long'),
+  body('district').optional().isString().isLength({ max: 100 }).withMessage('District name too long'),
+  body('regency').optional().isString().isLength({ max: 100 }).withMessage('Regency name too long'),
+  body('province').optional().isString().isLength({ max: 100 }).withMessage('Province name too long'),
+  
+  handleValidationErrors,
+  patientController.createPatient
+);
 
 // ============================================================================
 // BULK OPERATIONS (Optional - for future use)
 // ============================================================================
 
 /**
- * @route   POST /api/admin/patients/bulk-update
+ * @route   POST /api/web/admin/patients/bulk-update
  * @desc    Bulk update patients status
  * @access  Admin only
  */
@@ -272,7 +293,7 @@ router.post('/bulk-update',
 );
 
 /**
- * @route   GET /api/admin/patients/export/csv
+ * @route   GET /api/web/admin/patients/export/csv
  * @desc    Export patients data as CSV
  * @access  Admin only
  */

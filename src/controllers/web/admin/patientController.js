@@ -444,8 +444,19 @@ const createPatient = async (req, res) => {
             village,
             district,
             regency,
-            province
+            province,
+            qrCode // ADD THIS
         } = req.body;
+
+        console.log('📝 Creating patient with data:', {
+            email,
+            fullName,
+            nik,
+            phone,
+            gender,
+            qrCode, // Log QR Code
+            hasPassword: !!password
+        });
 
         // Validate required fields
         if (!email || !password || !fullName) {
@@ -484,6 +495,21 @@ const createPatient = async (req, res) => {
             }
         }
 
+        // Check if QR Code already exists (if provided)
+        if (qrCode) {
+            const existingQR = await prisma.user.findUnique({
+                where: { qrCode }
+            });
+
+            if (existingQR) {
+                return res.status(409).json({
+                    success: false,
+                    error: "QR Code already exists",
+                    message: "A user with this QR Code already exists"
+                });
+            }
+        }
+
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 12);
 
@@ -502,10 +528,18 @@ const createPatient = async (req, res) => {
                 district,
                 regency,
                 province,
+                qrCode, // ADD THIS LINE
                 role: 'PATIENT',
                 isActive: true,
                 emailVerified: false
             }
+        });
+
+        console.log('✅ Patient created successfully with QR Code:', {
+            id: newPatient.id,
+            email: newPatient.email,
+            fullName: newPatient.fullName,
+            qrCode: newPatient.qrCode
         });
 
         // Remove password from response
@@ -520,7 +554,7 @@ const createPatient = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Error creating patient:", error);
+        console.error("❌ Error creating patient:", error);
         res.status(500).json({
             success: false,
             error: "Internal server error",
@@ -800,6 +834,85 @@ const getPatientStats = async (req, res) => {
     }
 };
 
+// Get next patient number for QR code generation
+const getNextPatientNumber = async (req, res) => {
+    try {
+        console.log('🔢 GET /next-number endpoint hit');
+        console.log('📋 Request details:', {
+            method: req.method,
+            url: req.url,
+            originalUrl: req.originalUrl,
+            baseUrl: req.baseUrl,
+            path: req.path,
+            headers: {
+                authorization: req.headers.authorization ? 'Present' : 'Missing',
+                'content-type': req.headers['content-type']
+            }
+        });
+
+        // Count existing patients with USER_XXX QR codes
+        const existingPatients = await prisma.user.findMany({
+            where: {
+                role: { in: ['USER', 'PATIENT'] },
+                qrCode: {
+                    startsWith: 'USER_'
+                }
+            },
+            select: {
+                qrCode: true
+            },
+            orderBy: {
+                createdAt: 'desc'
+            }
+        });
+
+        console.log('📊 Found existing patients with QR codes:', existingPatients.length);
+
+        let nextNumber = 1;
+
+        if (existingPatients.length > 0) {
+            // Extract numbers from existing QR codes
+            const numbers = existingPatients
+                .map(patient => {
+                    if (patient.qrCode) {
+                        const match = patient.qrCode.match(/USER_(\d+)/);
+                        return match ? parseInt(match[1]) : 0;
+                    }
+                    return 0;
+                })
+                .filter(num => num > 0);
+
+            console.log('🔢 Extracted numbers:', numbers);
+
+            if (numbers.length > 0) {
+                nextNumber = Math.max(...numbers) + 1;
+            }
+        }
+
+        console.log('✅ Next patient number calculated:', nextNumber);
+
+        const result = {
+            success: true,
+            message: 'Next patient number retrieved',
+            data: {
+                nextNumber,
+                currentCount: existingPatients.length
+            }
+        };
+
+        console.log('📤 Sending response:', result);
+
+        res.json(result);
+    } catch (error) {
+        console.error('❌ Get next patient number error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal mendapatkan nomor pasien berikutnya',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
 module.exports = {
     getPatients,
     getPatientById,
@@ -807,5 +920,6 @@ module.exports = {
     createPatient,
     updatePatient,
     deletePatient,
-    generateWebToken
+    generateWebToken,
+    getNextPatientNumber
 };
