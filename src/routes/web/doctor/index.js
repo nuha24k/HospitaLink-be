@@ -7,7 +7,7 @@ const { handleValidationErrors } = require('../../../middlewares/validation');
 
 // Import controllers
 const dashboardController = require('../../../controllers/web/doctor/dashboardController');
-const patientController = require('../../../controllers/web/doctor/patientController'); // Add this
+const patientController = require('../../../controllers/web/doctor/patientController');
 
 // Import sub-routes
 const queueRoutes = require('./queue');
@@ -57,9 +57,10 @@ router.use(requireRole(['DOCTOR']));
 // Dashboard protected routes
 router.get('/dashboard', dashboardController.getDoctorDashboard);
 
-// Patient routes - Add these here
+// Patient routes
 router.get('/patients', patientController.getPatients);
 router.get('/patients/search', patientController.searchPatients);
+router.get('/patients/all', patientController.getAllPatients);
 
 // Protected sub-routes
 router.use('/queue', queueRoutes);

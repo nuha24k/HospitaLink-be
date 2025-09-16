@@ -62,17 +62,23 @@ app.get('/health', (req, res) => {
 const authRoutes = require('./routes/authRoute');
 const userRoutes = require('./routes/userRoute');
 const queueRoutes = require('./routes/queueRoute');
-const consultationRoutes = require('./routes/consultationRoute');
+const consultationRoutes = require('./routes/mobile/consultationRoute');
 
 // Import web routes
 const webDoctorRoutes = require('./routes/web/doctor');
 const webAdminRoutes = require('./routes/web/admin');
+
+// Import mobile routes
+const mobileDashboardRoutes = require('./routes/mobile/dashboardRoute');
+const mobileNotificationRoutes = require('./routes/mobile/notificationRoute');
 
 // API Routes (Mobile)
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/consultations', consultationRoutes);
 app.use('/api/queues', queueRoutes);
+app.use('/api/dashboard', mobileDashboardRoutes); 
+app.use('/api/notifications', mobileNotificationRoutes);
 
 // Web Routes (Dashboard) - Add logging
 app.use('/api/web/doctor', (req, res, next) => {
