@@ -141,6 +141,242 @@ const getQueues = async (req, res) => {
   }
 };
 
+// Call patient (WAITING -> CALLED)
+const callPatient = async (req, res) => {
+  try {
+    const { queueId } = req.params;
+
+    // Find the queue
+    const queue = await prisma.queue.findUnique({
+      where: { id: queueId },
+      include: {
+        user: {
+          select: {
+            fullName: true,
+            phone: true,
+          },
+        },
+      },
+    });
+
+    if (!queue) {
+      return res.status(404).json({
+        success: false,
+        message: 'Queue not found',
+      });
+    }
+
+    // Check if queue can be called
+    if (queue.status !== 'WAITING') {
+      return res.status(400).json({
+        success: false,
+        message: `Queue cannot be called. Current status: ${queue.status}`,
+      });
+    }
+
+    // Update queue status to CALLED
+    const updatedQueue = await prisma.queue.update({
+      where: { id: queueId },
+      data: {
+        status: 'CALLED',
+        calledTime: new Date(),
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            phone: true,
+          },
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      message: `Patient ${queue.user.fullName} (${queue.queueNumber}) has been called`,
+      data: updatedQueue,
+    });
+  } catch (error) {
+    console.error('Call patient error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to call patient',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+    });
+  }
+};
+
+// Start consultation (CALLED -> IN_PROGRESS)
+const startConsultation = async (req, res) => {
+  try {
+    const { queueId } = req.params;
+
+    // Find the queue
+    const queue = await prisma.queue.findUnique({
+      where: { id: queueId },
+      include: {
+        user: {
+          select: {
+            fullName: true,
+          },
+        },
+      },
+    });
+
+    if (!queue) {
+      return res.status(404).json({
+        success: false,
+        message: 'Queue not found',
+      });
+    }
+
+    // Check if queue can be started
+    if (queue.status !== 'CALLED') {
+      return res.status(400).json({
+        success: false,
+        message: `Consultation cannot be started. Current status: ${queue.status}`,
+      });
+    }
+
+    // Update queue status to IN_PROGRESS
+    const updatedQueue = await prisma.queue.update({
+      where: { id: queueId },
+      data: {
+        status: 'IN_PROGRESS',
+      },
+    });
+
+    res.json({
+      success: true,
+      message: `Consultation started for ${queue.user.fullName} (${queue.queueNumber})`,
+      data: updatedQueue,
+    });
+  } catch (error) {
+    console.error('Start consultation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to start consultation',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+    });
+  }
+};
+
+// Complete consultation (IN_PROGRESS -> COMPLETED)
+const completeConsultation = async (req, res) => {
+  try {
+    const { queueId } = req.params;
+    const { notes } = req.body;
+
+    // Find the queue
+    const queue = await prisma.queue.findUnique({
+      where: { id: queueId },
+      include: {
+        user: {
+          select: {
+            fullName: true,
+          },
+        },
+      },
+    });
+
+    if (!queue) {
+      return res.status(404).json({
+        success: false,
+        message: 'Queue not found',
+      });
+    }
+
+    // Check if queue can be completed
+    if (queue.status !== 'IN_PROGRESS') {
+      return res.status(400).json({
+        success: false,
+        message: `Consultation cannot be completed. Current status: ${queue.status}`,
+      });
+    }
+
+    // Update queue status to COMPLETED
+    const updatedQueue = await prisma.queue.update({
+      where: { id: queueId },
+      data: {
+        status: 'COMPLETED',
+        completedTime: new Date(),
+        ...(notes && { notes: notes }),
+      },
+    });
+
+    res.json({
+      success: true,
+      message: `Consultation completed for ${queue.user.fullName} (${queue.queueNumber})`,
+      data: updatedQueue,
+    });
+  } catch (error) {
+    console.error('Complete consultation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to complete consultation',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+    });
+  }
+};
+
+// Cancel queue (Any status -> CANCELLED)
+const cancelQueue = async (req, res) => {
+  try {
+    const { queueId } = req.params;
+    const { reason } = req.body;
+
+    // Find the queue
+    const queue = await prisma.queue.findUnique({
+      where: { id: queueId },
+      include: {
+        user: {
+          select: {
+            fullName: true,
+          },
+        },
+      },
+    });
+
+    if (!queue) {
+      return res.status(404).json({
+        success: false,
+        message: 'Queue not found',
+      });
+    }
+
+    // Check if queue can be cancelled
+    if (queue.status === 'COMPLETED' || queue.status === 'CANCELLED') {
+      return res.status(400).json({
+        success: false,
+        message: `Queue cannot be cancelled. Current status: ${queue.status}`,
+      });
+    }
+
+    // Update queue status to CANCELLED
+    const updatedQueue = await prisma.queue.update({
+      where: { id: queueId },
+      data: {
+        status: 'CANCELLED',
+        notes: reason || 'Cancelled by admin',
+      },
+    });
+
+    res.json({
+      success: true,
+      message: `Queue cancelled for ${queue.user.fullName} (${queue.queueNumber})`,
+      data: updatedQueue,
+    });
+  } catch (error) {
+    console.error('Cancel queue error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to cancel queue',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+    });
+  }
+};
+
 // Get queue by ID
 const getQueueById = async (req, res) => {
   try {
@@ -594,4 +830,8 @@ module.exports = {
   getQueueHistory,
   getTodayQueues,
   getQueueAnalytics,
+  callPatient,
+  startConsultation,
+  completeConsultation,
+  cancelQueue,
 };

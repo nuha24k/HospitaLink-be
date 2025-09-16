@@ -7,7 +7,9 @@ const authController = require('../../../controllers/web/admin/authController');
 // Import route modules
 const patientRoutes = require('./patientRoute');
 const doctorRoutes = require('./doctorRoute');
-const queueRoutes = require('./queueRoute'); // Add this line
+const queueRoutes = require('./queueRoute');
+const cardRoutes = require('./cardRoute');
+const prescriptionRoutes = require('./prescriptionRoute'); // Add this line
 
 // Import middlewares
 const { authWebMiddleware, requireRole } = require('../../../middlewares/auth');
@@ -125,5 +127,19 @@ router.use('/doctors', doctorRoutes);
  * @access  Admin only
  */
 router.use('/queue', queueRoutes); // Add this line
+
+/**
+ * @route   /api/admin/cards/*
+ * @desc    All patient card routes
+ * @access  Admin only
+ */
+router.use('/cards', cardRoutes); // Add this line
+
+/**
+ * @route   /api/admin/prescriptions/*
+ * @desc    All prescription management routes
+ * @access  Admin only
+ */
+router.use('/prescriptions', prescriptionRoutes); // Add this line
 
 module.exports = router;
