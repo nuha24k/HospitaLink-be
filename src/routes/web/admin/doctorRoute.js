@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const doctorController = require('../../../controllers/web/admin/doctorController');
-const { body } = require('express-validator');
+const { authWebMiddleware, requireRole } = require('../../../middlewares/auth');
+const { body, query } = require('express-validator');
 const { validationResult } = require('express-validator');
 
 // Validation middleware
@@ -16,6 +17,10 @@ const handleValidationErrors = (req, res, next) => {
     }
     next();
 };
+
+// Apply authentication middleware
+router.use(authWebMiddleware);
+router.use(requireRole(['ADMIN']));
 
 // Validation rules
 const doctorValidation = [
@@ -42,7 +47,45 @@ const updateDoctorValidation = [
  * @desc    Get all doctors with pagination
  * @access  Admin only
  */
-router.get('/', doctorController.getDoctors);
+router.get('/',
+    [
+        query('page').optional().isInt({ min: 1 }),
+        query('limit').optional().isInt({ min: 1, max: 100 }),
+        query('search').optional().isString()
+    ],
+    handleValidationErrors,
+    doctorController.getDoctors
+);
+
+/**
+ * @route   GET /api/web/admin/doctors/attendance
+ * @desc    Get doctors attendance status
+ * @access  Admin only
+ */
+router.get('/attendance',
+    [
+        query('page').optional().isInt({ min: 1 }),
+        query('limit').optional().isInt({ min: 1, max: 100 }),
+        query('search').optional().isString(),
+        query('specialty').optional().isString(),
+        query('status').optional().isIn(['ALL', 'ON_DUTY', 'AVAILABLE', 'OFFLINE'])
+    ],
+    handleValidationErrors,
+    doctorController.getDoctorsAttendance
+);
+
+/**
+ * @route   GET /api/web/admin/doctors/schedule-summary
+ * @desc    Get doctor schedule summary for specific date
+ * @access  Admin only
+ */
+router.get('/schedule-summary',
+    [
+        query('date').optional().isISO8601().withMessage('Format tanggal harus YYYY-MM-DD')
+    ],
+    handleValidationErrors,
+    doctorController.getDoctorScheduleSummary
+);
 
 /**
  * @route   GET /api/web/admin/doctors/search
@@ -80,6 +123,32 @@ router.put('/:id',
     updateDoctorValidation,
     handleValidationErrors,
     doctorController.updateDoctor
+);
+
+/**
+ * @route   PATCH /api/web/admin/doctors/:id/duty-status
+ * @desc    Update doctor duty status
+ * @access  Admin only
+ */
+router.patch('/:id/duty-status',
+    [
+        body('isOnDuty').isBoolean().withMessage('Status bertugas harus berupa boolean')
+    ],
+    handleValidationErrors,
+    doctorController.updateDoctorDutyStatus
+);
+
+/**
+ * @route   PATCH /api/web/admin/doctors/:id/availability
+ * @desc    Update doctor availability
+ * @access  Admin only
+ */
+router.patch('/:id/availability',
+    [
+        body('isAvailable').isBoolean().withMessage('Status ketersediaan harus berupa boolean')
+    ],
+    handleValidationErrors,
+    doctorController.updateDoctorAvailability
 );
 
 /**

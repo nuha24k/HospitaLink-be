@@ -478,6 +478,425 @@ const doctorController = {
                 message: 'Gagal mencari dokter'
             });
         }
+    },
+
+    // Get doctors attendance
+    getDoctorsAttendance: async (req, res) => {
+        try {
+            const { 
+                page = 1, 
+                limit = 50, 
+                search = '', 
+                specialty = 'ALL',
+                status = 'ALL' 
+            } = req.query;
+            
+            const skip = (parseInt(page) - 1) * parseInt(limit);
+            
+            // Build where condition for doctors
+            const where = {
+                role: 'DOCTOR',
+                isActive: true,
+                ...(search && {
+                    OR: [
+                        { fullName: { contains: search, mode: 'insensitive' } },
+                        { email: { contains: search, mode: 'insensitive' } },
+                        { phone: { contains: search } },
+                        { 
+                            doctorProfile: {
+                                licenseNumber: { contains: search, mode: 'insensitive' }
+                            }
+                        }
+                    ]
+                }),
+                ...(specialty !== 'ALL' && {
+                    doctorProfile: {
+                        specialty: { equals: specialty, mode: 'insensitive' }
+                    }
+                })
+            };
+
+            // Add status filter
+            if (status !== 'ALL') {
+                if (status === 'ON_DUTY') {
+                    where.doctorProfile = {
+                        ...where.doctorProfile,
+                        isOnDuty: true
+                    };
+                } else if (status === 'AVAILABLE') {
+                    where.doctorProfile = {
+                        ...where.doctorProfile,
+                        isAvailable: true,
+                        isOnDuty: false
+                    };
+                } else if (status === 'OFFLINE') {
+                    where.doctorProfile = {
+                        ...where.doctorProfile,
+                        OR: [
+                            { isAvailable: false },
+                            { isOnDuty: false }
+                        ]
+                    };
+                }
+            }
+
+            const [doctors, totalCount] = await Promise.all([
+                prisma.user.findMany({
+                    where,
+                    select: {
+                        id: true,
+                        fullName: true,
+                        email: true,
+                        phone: true,
+                        profilePicture: true,
+                        isActive: true,
+                        lastLogin: true,
+                        createdAt: true,
+                        doctorProfile: {
+                            select: {
+                                licenseNumber: true,
+                                specialty: true,
+                                consultationFee: true,
+                                isAvailable: true,
+                                isOnDuty: true,
+                                bio: true,
+                                updatedAt: true
+                            }
+                        }
+                    },
+                    orderBy: [
+                        { doctorProfile: { isOnDuty: 'desc' } },
+                        { doctorProfile: { isAvailable: 'desc' } },
+                        { fullName: 'asc' }
+                    ],
+                    skip,
+                    take: parseInt(limit)
+                }),
+                prisma.user.count({ where })
+            ]);
+
+            // Calculate statistics
+            const allDoctors = await prisma.user.findMany({
+                where: {
+                    role: 'DOCTOR',
+                    isActive: true
+                },
+                select: {
+                    doctorProfile: {
+                        select: {
+                            specialty: true,
+                            isAvailable: true,
+                            isOnDuty: true
+                        }
+                    }
+                }
+            });
+
+            const stats = {
+                totalDoctors: allDoctors.length,
+                onDutyCount: allDoctors.filter(d => d.doctorProfile?.isOnDuty).length,
+                availableCount: allDoctors.filter(d => d.doctorProfile?.isAvailable && !d.doctorProfile?.isOnDuty).length,
+                offlineCount: allDoctors.filter(d => !d.doctorProfile?.isAvailable && !d.doctorProfile?.isOnDuty).length,
+                specialtyBreakdown: []
+            };
+
+            // Calculate specialty breakdown
+            const specialtyMap = {};
+            allDoctors.forEach(doctor => {
+                const specialty = doctor.doctorProfile?.specialty || 'Unknown';
+                if (!specialtyMap[specialty]) {
+                    specialtyMap[specialty] = {
+                        specialty,
+                        total: 0,
+                        onDuty: 0,
+                        available: 0
+                    };
+                }
+                specialtyMap[specialty].total++;
+                if (doctor.doctorProfile?.isOnDuty) {
+                    specialtyMap[specialty].onDuty++;
+                } else if (doctor.doctorProfile?.isAvailable) {
+                    specialtyMap[specialty].available++;
+                }
+            });
+
+            stats.specialtyBreakdown = Object.values(specialtyMap);
+
+            const totalPages = Math.ceil(totalCount / parseInt(limit));
+
+            // Format response
+            const formattedDoctors = doctors.map(doctor => ({
+                ...doctor,
+                lastLogin: doctor.lastLogin ? doctor.lastLogin.toISOString() : null,
+                createdAt: doctor.createdAt.toISOString()
+            }));
+
+            res.json({
+                success: true,
+                message: 'Doctor attendance data retrieved successfully',
+                data: {
+                    doctors: formattedDoctors,
+                    pagination: {
+                        currentPage: parseInt(page),
+                        totalPages,
+                        totalCount,
+                        hasNext: parseInt(page) < totalPages,
+                        hasPrev: parseInt(page) > 1
+                    },
+                    stats
+                }
+            });
+        } catch (error) {
+            console.error('Get doctors attendance error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Gagal memuat data kehadiran dokter',
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
+        }
+    },
+
+    // Update doctor duty status
+    updateDoctorDutyStatus: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { isOnDuty } = req.body;
+
+            // Validate input
+            if (typeof isOnDuty !== 'boolean') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Status bertugas harus berupa boolean'
+                });
+            }
+
+            // Check if doctor exists
+            const doctor = await prisma.user.findFirst({
+                where: {
+                    id,
+                    role: 'DOCTOR',
+                    isActive: true
+                },
+                include: {
+                    doctorProfile: true
+                }
+            });
+
+            if (!doctor || !doctor.doctorProfile) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Dokter tidak ditemukan atau tidak memiliki profil'
+                });
+            }
+
+            // Update doctor profile
+            await prisma.doctor.update({
+                where: { id: doctor.doctorProfile.id },
+                data: {
+                    isOnDuty,
+                    // If going on duty, automatically set as available
+                    ...(isOnDuty && { isAvailable: true }),
+                    updatedAt: new Date()
+                }
+            });
+
+            // Log activity (optional)
+            await prisma.activityLog.create({
+                data: {
+                    userId: id,
+                    action: isOnDuty ? 'DOCTOR_ON_DUTY' : 'DOCTOR_OFF_DUTY',
+                    description: `Doctor ${isOnDuty ? 'went on' : 'went off'} duty`,
+                    metadata: {
+                        doctorId: id,
+                        doctorName: doctor.fullName,
+                        previousStatus: doctor.doctorProfile.isOnDuty,
+                        newStatus: isOnDuty
+                    }
+                }
+            }).catch(err => {
+                console.warn('Failed to log activity:', err);
+            });
+
+            res.json({
+                success: true,
+                message: `Status bertugas dokter berhasil ${isOnDuty ? 'diaktifkan' : 'dinonaktifkan'}`,
+                data: {
+                    id,
+                    fullName: doctor.fullName,
+                    isOnDuty
+                }
+            });
+        } catch (error) {
+            console.error('Update doctor duty status error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Gagal mengubah status bertugas dokter'
+            });
+        }
+    },
+
+    // Update doctor availability
+    updateDoctorAvailability: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { isAvailable } = req.body;
+
+            // Validate input
+            if (typeof isAvailable !== 'boolean') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Status ketersediaan harus berupa boolean'
+                });
+            }
+
+            // Check if doctor exists
+            const doctor = await prisma.user.findFirst({
+                where: {
+                    id,
+                    role: 'DOCTOR',
+                    isActive: true
+                },
+                include: {
+                    doctorProfile: true
+                }
+            });
+
+            if (!doctor || !doctor.doctorProfile) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Dokter tidak ditemukan atau tidak memiliki profil'
+                });
+            }
+
+            // Update doctor profile
+            await prisma.doctor.update({
+                where: { id: doctor.doctorProfile.id },
+                data: {
+                    isAvailable,
+                    // If going unavailable, also set off duty
+                    ...(!isAvailable && { isOnDuty: false }),
+                    updatedAt: new Date()
+                }
+            });
+
+            // Log activity (optional)
+            await prisma.activityLog.create({
+                data: {
+                    userId: id,
+                    action: isAvailable ? 'DOCTOR_AVAILABLE' : 'DOCTOR_UNAVAILABLE',
+                    description: `Doctor became ${isAvailable ? 'available' : 'unavailable'}`,
+                    metadata: {
+                        doctorId: id,
+                        doctorName: doctor.fullName,
+                        previousStatus: doctor.doctorProfile.isAvailable,
+                        newStatus: isAvailable
+                    }
+                }
+            }).catch(err => {
+                console.warn('Failed to log activity:', err);
+            });
+
+            res.json({
+                success: true,
+                message: `Status ketersediaan dokter berhasil ${isAvailable ? 'diaktifkan' : 'dinonaktifkan'}`,
+                data: {
+                    id,
+                    fullName: doctor.fullName,
+                    isAvailable
+                }
+            });
+        } catch (error) {
+            console.error('Update doctor availability error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Gagal mengubah status ketersediaan dokter'
+            });
+        }
+    },
+
+    // Get doctor schedule summary
+    getDoctorScheduleSummary: async (req, res) => {
+        try {
+            const { date } = req.query;
+            const targetDate = date ? new Date(date) : new Date();
+            
+            // Set to start of day
+            const startOfDay = new Date(targetDate);
+            startOfDay.setHours(0, 0, 0, 0);
+            
+            // Set to end of day
+            const endOfDay = new Date(targetDate);
+            endOfDay.setHours(23, 59, 59, 999);
+
+            const scheduleData = await prisma.user.findMany({
+                where: {
+                    role: 'DOCTOR',
+                    isActive: true,
+                    doctorProfile: {
+                        isOnDuty: true
+                    }
+                },
+                select: {
+                    id: true,
+                    fullName: true,
+                    doctorProfile: {
+                        select: {
+                            specialty: true,
+                            isOnDuty: true,
+                            isAvailable: true
+                        }
+                    },
+                    appointments: {
+                        where: {
+                            scheduledAt: {
+                                gte: startOfDay,
+                                lte: endOfDay
+                            },
+                            status: {
+                                not: 'CANCELLED'
+                            }
+                        },
+                        select: {
+                            id: true,
+                            scheduledAt: true,
+                            status: true,
+                            patient: {
+                                select: {
+                                    fullName: true
+                                }
+                            }
+                        }
+                    }
+                },
+                orderBy: {
+                    fullName: 'asc'
+                }
+            });
+
+            res.json({
+                success: true,
+                message: 'Doctor schedule summary retrieved successfully',
+                data: {
+                    date: targetDate.toISOString().split('T')[0],
+                    onDutyDoctors: scheduleData.length,
+                    schedule: scheduleData.map(doctor => ({
+                        id: doctor.id,
+                        fullName: doctor.fullName,
+                        specialty: doctor.doctorProfile?.specialty,
+                        isOnDuty: doctor.doctorProfile?.isOnDuty,
+                        isAvailable: doctor.doctorProfile?.isAvailable,
+                        appointmentsCount: doctor.appointments.length,
+                        appointments: doctor.appointments
+                    }))
+                }
+            });
+        } catch (error) {
+            console.error('Get doctor schedule summary error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Gagal memuat ringkasan jadwal dokter'
+            });
+        }
     }
 };
 

@@ -44,4 +44,11 @@ router.get('/',
  */
 router.get('/:id', cardController.getCardById);
 
+/**
+ * @route   GET /api/web/admin/cards/:id/download
+ * @desc    Download patient card as PDF
+ * @access  Admin only
+ */
+router.get('/:id/download', cardController.downloadCardPdf);
+
 module.exports = router;
