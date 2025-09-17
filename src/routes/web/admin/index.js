@@ -10,7 +10,8 @@ const doctorRoutes = require('./doctorRoute');
 const queueRoutes = require('./queueRoute');
 const cardRoutes = require('./cardRoute');
 const prescriptionRoutes = require('./prescriptionRoute');
-const medicationRoutes = require('./medicationRoute'); // Add this line
+const medicationRoutes = require('./medicationRoute');
+const checkinPatientRoutes = require('./checkinPatientRoute'); // Add this line
 
 // Import middlewares
 const { authWebMiddleware, requireRole } = require('../../../middlewares/auth');
@@ -148,6 +149,13 @@ router.use('/prescriptions', prescriptionRoutes);
  * @desc    All medication management routes
  * @access  Admin only
  */
-router.use('/medications', medicationRoutes); // Add this line
+router.use('/medications', medicationRoutes);
+
+/**
+ * @route   /api/web/admin/checkin/*
+ * @desc    All patient check-in routes
+ * @access  Admin only
+ */
+router.use('/checkin', checkinPatientRoutes); // Add this line
 
 module.exports = router;
