@@ -69,14 +69,6 @@ const getAllMedications = async (req, res) => {
 
     const totalPages = Math.ceil(totalCount / take);
 
-    // Fixed: Use proper raw query for counting low stock medications
-    const [lowStockResult] = await prisma.$queryRaw`
-      SELECT COUNT(*) as count 
-      FROM "Medication" 
-      WHERE "isActive" = true 
-      AND "stock" <= "minStock"
-    `;
-
     res.status(200).json({
       success: true,
       message: 'Medications retrieved successfully',
@@ -99,7 +91,12 @@ const getAllMedications = async (req, res) => {
         summary: {
           total: totalCount,
           active: await prisma.medication.count({ where: { isActive: true } }),
-          lowStock: parseInt(lowStockResult.count.toString()),
+          lowStock: await prisma.medication.count({ 
+            where: { 
+              isActive: true,
+              stock: { lte: prisma.medication.fields.minStock }
+            }
+          }),
           prescriptionOnly: await prisma.medication.count({ 
             where: { requiresPrescription: true } 
           }),
@@ -472,13 +469,18 @@ const updateMedicationStock = async (req, res) => {
  */
 const getLowStockMedications = async (req, res) => {
   try {
-    // Fixed: Use proper raw query to compare stock with minStock
-    const lowStockMedications = await prisma.$queryRaw`
-      SELECT * FROM "Medication" 
-      WHERE "isActive" = true 
-      AND "stock" <= "minStock"
-      ORDER BY "stock" ASC, "genericName" ASC
-    `;
+    const lowStockMedications = await prisma.medication.findMany({
+      where: {
+        isActive: true,
+        stock: {
+          lte: prisma.medication.fields.minStock
+        }
+      },
+      orderBy: [
+        { stock: 'asc' },
+        { genericName: 'asc' }
+      ]
+    });
 
     const medicationsWithStatus = lowStockMedications.map(med => ({
       ...med,
@@ -519,6 +521,7 @@ const getMedicationStatistics = async (req, res) => {
       inactiveMedications,
       prescriptionOnlyMedications,
       controlledMedications,
+      lowStockCount,
       categoryStats,
       stockValueTotal
     ] = await Promise.all([
@@ -527,6 +530,12 @@ const getMedicationStatistics = async (req, res) => {
       prisma.medication.count({ where: { isActive: false } }),
       prisma.medication.count({ where: { requiresPrescription: true } }),
       prisma.medication.count({ where: { isControlled: true } }),
+      prisma.medication.count({
+        where: {
+          isActive: true,
+          stock: { lte: prisma.medication.fields.minStock }
+        }
+      }),
       prisma.medication.groupBy({
         by: ['category'],
         _count: { id: true },
@@ -541,14 +550,6 @@ const getMedicationStatistics = async (req, res) => {
       })
     ]);
 
-    // Fixed: Get low stock count using raw query
-    const [lowStockResult] = await prisma.$queryRaw`
-      SELECT COUNT(*) as count 
-      FROM "Medication" 
-      WHERE "isActive" = true 
-      AND "stock" <= "minStock"
-    `;
-
     res.status(200).json({
       success: true,
       message: 'Medication statistics retrieved successfully',
@@ -559,7 +560,7 @@ const getMedicationStatistics = async (req, res) => {
           inactive: inactiveMedications,
           prescriptionOnly: prescriptionOnlyMedications,
           controlled: controlledMedications,
-          lowStock: parseInt(lowStockResult.count.toString())
+          lowStock: lowStockCount
         },
         categories: categoryStats.map(cat => ({
           name: cat.category,
