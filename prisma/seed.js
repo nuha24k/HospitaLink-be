@@ -13,6 +13,7 @@ const labResultSeeder = require('./seeder/labResultSeeder');
 const notificationSeeder = require('./seeder/notificationSeeder');
 const systemConfigSeeder = require('./seeder/systemConfigSeeder');
 const familyMemberSeeder = require('./seeder/familyMemberSeeder');
+const medicationSeeder = require('./seeder/medicationSeeder'); // NEW
 
 const prisma = new PrismaClient();
 
@@ -30,52 +31,57 @@ const main = async () => {
     await hospitalConfigSeeder();
     console.log('✅ Hospital Configuration seeded successfully!\n');
 
-    // 3. Users (Foundation for all other data)
+    // 3. Medications (Independent data - can be early)
+    console.log('💊 Seeding Medications...');
+    await medicationSeeder();
+    console.log('✅ Medications seeded successfully!\n');
+
+    // 4. Users (Foundation for all other data)
     console.log('👥 Seeding Users...');
     await userSeeder();
     console.log('✅ Users seeded successfully!\n');
 
-    // 4. Doctors (Independent of users)
+    // 5. Doctors (Independent of users)
     console.log('👨‍⚕️ Seeding Doctors...');
     await doctorSeeder();
     console.log('✅ Doctors seeded successfully!\n');
 
-    // 5. Family Members (Depends on users)
+    // 6. Family Members (Depends on users)
     console.log('👨‍👩‍👧‍👦 Seeding Family Members...');
     await familyMemberSeeder();
     console.log('✅ Family Members seeded successfully!\n');
 
-    // 6. Consultations (Depends on users and doctors)
+    // 7. Consultations (Depends on users and doctors)
     console.log('💬 Seeding Consultations...');
     await consultationSeeder();
     console.log('✅ Consultations seeded successfully!\n');
 
-    // 7. Appointments (Depends on users and doctors)
+    // 8. Appointments (Depends on users and doctors)
     console.log('📅 Seeding Appointments...');
     await appointmentSeeder();
     console.log('✅ Appointments seeded successfully!\n');
 
-    // 8. Queues (Depends on users, doctors, consultations, appointments)
+    // 9. Queues (Depends on users, doctors, consultations, appointments)
     console.log('🎫 Seeding Queues...');
     await queueSeeder();
     console.log('✅ Queues seeded successfully!\n');
 
-    // 9. Prescriptions (NEW - Depends on users, doctors, consultations, appointments)
+    // 10. Prescriptions (NEW - Depends on users, doctors, consultations, appointments)
     console.log('💊 Seeding Prescriptions...');
     await prescriptionSeeder();
     console.log('✅ Prescriptions seeded successfully!\n');
 
-    // 10. Medical Records (Depends on users, doctors, consultations)
+    // 11. Medical Records (Depends on users, doctors, consultations)
     console.log('📋 Seeding Medical Records...');
     await medicalRecordSeeder();
     console.log('✅ Medical Records seeded successfully!\n');
 
-    // 11. Lab Results (Depends on users and medical records)
+    // 12. Lab Results (Depends on users and medical records)
     console.log('🔬 Seeding Lab Results...');
     await labResultSeeder();
     console.log('✅ Lab Results seeded successfully!\n');
 
-    // 12. Notifications (Depends on users)
+    // 13. Notifications (Depends on users)
     console.log('🔔 Seeding Notifications...');
     await notificationSeeder();
     console.log('✅ Notifications seeded successfully!\n');
@@ -102,6 +108,7 @@ const getSeedingSummary = async () => {
     const counts = await Promise.all([
       prisma.user.count(),
       prisma.doctor.count(),
+      prisma.medication.count(), // NEW
       prisma.consultation.count(),
       prisma.appointment.count(),
       prisma.queue.count(),
@@ -115,14 +122,15 @@ const getSeedingSummary = async () => {
     return `
   👥 Users: ${counts[0]}
   👨‍⚕️ Doctors: ${counts[1]}
-  💬 Consultations: ${counts[2]}
-  📅 Appointments: ${counts[3]}
-  🎫 Queues: ${counts[4]}
-  💊 Prescriptions: ${counts[5]}
-  📋 Medical Records: ${counts[6]}
-  🔬 Lab Results: ${counts[7]}
-  🔔 Notifications: ${counts[8]}
-  👨‍👩‍👧‍👦 Family Members: ${counts[9]}
+  💊 Medications: ${counts[2]}
+  💬 Consultations: ${counts[3]}
+  📅 Appointments: ${counts[4]}
+  🎫 Queues: ${counts[5]}
+  💊 Prescriptions: ${counts[6]}
+  📋 Medical Records: ${counts[7]}
+  🔬 Lab Results: ${counts[8]}
+  🔔 Notifications: ${counts[9]}
+  👨‍👩‍👧‍👦 Family Members: ${counts[10]}
     `;
   } catch (error) {
     return '  ⚠️ Could not generate summary';

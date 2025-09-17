@@ -9,7 +9,8 @@ const patientRoutes = require('./patientRoute');
 const doctorRoutes = require('./doctorRoute');
 const queueRoutes = require('./queueRoute');
 const cardRoutes = require('./cardRoute');
-const prescriptionRoutes = require('./prescriptionRoute'); // Add this line
+const prescriptionRoutes = require('./prescriptionRoute');
+const medicationRoutes = require('./medicationRoute'); // Add this line
 
 // Import middlewares
 const { authWebMiddleware, requireRole } = require('../../../middlewares/auth');
@@ -108,38 +109,45 @@ router.post('/update-profile',
 // ============================================================================
 
 /**
- * @route   /api/admin/patients/*
+ * @route   /api/web/admin/patients/*
  * @desc    All patient management routes
  * @access  Admin only
  */
 router.use('/patients', patientRoutes);
 
 /**
- * @route   /api/admin/doctors/*
+ * @route   /api/web/admin/doctors/*
  * @desc    All doctor management routes
  * @access  Admin only
  */
 router.use('/doctors', doctorRoutes);
 
 /**
- * @route   /api/admin/queue/*
+ * @route   /api/web/admin/queue/*
  * @desc    All queue management routes
  * @access  Admin only
  */
-router.use('/queue', queueRoutes); // Add this line
+router.use('/queue', queueRoutes);
 
 /**
- * @route   /api/admin/cards/*
+ * @route   /api/web/admin/cards/*
  * @desc    All patient card routes
  * @access  Admin only
  */
-router.use('/cards', cardRoutes); // Add this line
+router.use('/cards', cardRoutes);
 
 /**
- * @route   /api/admin/prescriptions/*
+ * @route   /api/web/admin/prescriptions/*
  * @desc    All prescription management routes
  * @access  Admin only
  */
-router.use('/prescriptions', prescriptionRoutes); // Add this line
+router.use('/prescriptions', prescriptionRoutes);
+
+/**
+ * @route   /api/web/admin/medications/*
+ * @desc    All medication management routes
+ * @access  Admin only
+ */
+router.use('/medications', medicationRoutes); // Add this line
 
 module.exports = router;
