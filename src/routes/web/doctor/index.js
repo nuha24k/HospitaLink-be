@@ -8,7 +8,8 @@ const { handleValidationErrors } = require('../../../middlewares/validation');
 // Import controllers
 const dashboardController = require('../../../controllers/web/doctor/dashboardController');
 const patientController = require('../../../controllers/web/doctor/patientController');
-
+const consultationController = require('../../../controllers/web/doctor/consultationController');
+const chatController = require('../../../controllers/web/doctor/chatController');
 // Import sub-routes
 const queueRoutes = require('./queue');
 const prescriptionRoutes = require('./prescription');

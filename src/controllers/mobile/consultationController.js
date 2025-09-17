@@ -1066,11 +1066,22 @@ const getChatConsultations = async (req, res) => {
 const sendChatMessage = async (req, res) => {
   try {
     const { consultationId, message } = req.body;
-    const { userId } = req.user;
+    const userId = req.user.id; // Fix: use userId instead of destructured userId
+
+    console.log('📤 Sending chat message:', { consultationId, userId, message: message.substring(0, 50) + '...' });
 
     const consultation = await prisma.consultation.findUnique({
       where: { id: consultationId },
-      include: { doctor: true, user: true }
+      include: { 
+        doctor: { 
+          select: { 
+            id: true, 
+            name: true, 
+            userId: true 
+          } 
+        }, 
+        user: true 
+      }
     });
 
     if (!consultation) {
@@ -1080,7 +1091,13 @@ const sendChatMessage = async (req, res) => {
       });
     }
 
-    if (consultation.userId !== userId) {
+    // Check authorization
+    const isPatient = consultation.userId === userId;
+    const isDoctor = consultation.doctorId && 
+                    req.user.role === 'DOCTOR' && 
+                    consultation.doctor?.userId === userId;
+
+    if (!isPatient && !isDoctor) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to send message to this consultation'
@@ -1090,8 +1107,8 @@ const sendChatMessage = async (req, res) => {
     // Create new message
     const newMessage = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-      text: message,
-      isUser: true,
+      text: message.trim(),
+      isUser: isPatient, // true if patient, false if doctor
       timestamp: new Date().toISOString(),
       isRead: true
     };
@@ -1108,28 +1125,56 @@ const sendChatMessage = async (req, res) => {
       }
     });
 
-    // Create notification for doctor (in real app, this would notify the doctor)
-    if (consultation.doctorId) {
+    // Create notification for the other party
+    if (isPatient && consultation.doctorId) {
+      // Patient sent message, notify doctor
       await prisma.notification.create({
         data: {
-          userId: consultation.doctorId,
-          title: 'Pesan Chat Baru',
-          message: `${consultation.user.fullName} mengirim pesan di konsultasi chat`,
+          userId: consultation.doctor.userId,
+          title: 'Pesan Baru dari Pasien',
+          message: `Pesan baru dari ${consultation.user.fullName}: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`,
           type: 'CONSULTATION',
           priority: 'MEDIUM',
-          relatedData: { consultationId, messagePreview: message.substring(0, 50) }
+          relatedData: {
+            consultationId,
+            messageId: newMessage.id
+          }
+        }
+      });
+    } else if (isDoctor) {
+      // Doctor sent message, notify patient
+      await prisma.notification.create({
+        data: {
+          userId: consultation.userId,
+          title: 'Pesan Baru dari Dokter',
+          message: `Dr. ${consultation.doctor.name}: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`,
+          type: 'CONSULTATION',
+          priority: 'HIGH',
+          relatedData: {
+            consultationId,
+            messageId: newMessage.id
+          }
         }
       });
     }
 
+    console.log('✅ Message sent successfully:', newMessage.id);
+
     res.json({
       success: true,
       message: 'Message sent successfully',
-      data: { message: newMessage }
+      data: { 
+        message: newMessage,
+        consultation: {
+          id: consultation.id,
+          totalMessages: updatedHistory.length,
+          lastActivity: new Date().toISOString()
+        }
+      }
     });
 
   } catch (error) {
-    console.error('Send chat message error:', error);
+    console.error('❌ Send chat message error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to send message',

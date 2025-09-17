@@ -63,6 +63,7 @@ const authRoutes = require('./routes/authRoute');
 const userRoutes = require('./routes/userRoute');
 const queueRoutes = require('./routes/mobile/queueRoute');
 const consultationRoutes = require('./routes/mobile/consultationRoute');
+const MobileConsultationRoutes = require('./routes/mobile/consultationRoute');
 const transactionRoutes = require('./routes/transactionRoute');
 const mobileTransactionRoutes = require('./routes/mobile/transactionRoute');
 
@@ -82,6 +83,7 @@ const transactionController = require('./controllers/transactionController');
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/consultations', consultationRoutes);
+app.use('/api/mobile/consultations', MobileConsultationRoutes);
 app.use('/api/queues', queueRoutes);
 app.use('/api/dashboard', mobileDashboardRoutes); 
 app.use('/api/notifications', mobileNotificationRoutes);

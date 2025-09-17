@@ -145,6 +145,13 @@ router.get('/chat-messages/:consultationId',
   consultationController.getChatMessages
 );
 
+router.get('/mobile/chat-messages/:consultationId', 
+  authMiddleware,
+  param('consultationId').isUUID().withMessage('Valid consultation ID is required'),
+  handleValidationErrors,
+  consultationController.getChatMessages
+);
+
 router.post('/accept-early', 
   authMiddleware,
   body('consultationId').isUUID().withMessage('Valid consultation ID is required'),
