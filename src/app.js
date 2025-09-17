@@ -78,6 +78,7 @@ const medicalHistoryRoutes = require('./routes/mobile/medicalHistoryRoute');
 const qrRoutes = require('./routes/mobile/qrRoute');
 const prescriptionRoutes = require('./routes/mobile/prescriptionRoute');
 const transactionController = require('./controllers/transactionController');
+const directConsultationRoutes = require('./routes/mobile/directConsultationRoute');
 
 // API Routes (Mobile) - Add transaction routes
 app.use('/api/auth', authRoutes);
@@ -90,6 +91,7 @@ app.use('/api/notifications', mobileNotificationRoutes);
 app.use('/api/mobile/medical-history', medicalHistoryRoutes);
 app.use('/api/mobile/prescriptions', prescriptionRoutes);
 app.use('/api/qr', qrRoutes);
+app.use('/api/mobile/direct-consultation', directConsultationRoutes);
 
 // Transaction routes
 app.use('/api/transactions', transactionRoutes);

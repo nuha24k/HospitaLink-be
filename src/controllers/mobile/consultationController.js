@@ -978,17 +978,12 @@ const getChatConsultations = async (req, res) => {
   try {
     const userId = req.user.id;
     
-    console.log('💬 Getting chat consultations for user:', userId);
-    
-    // Query consultations yang berbasis chat dengan dokter UNTUK USER INI
     const consultations = await prisma.consultation.findMany({
       where: {
         userId: userId,
-        type: 'CHAT_DOCTOR',
-        OR: [
-          { isPaid: true },
-          { paymentStatus: 'PAID' }
-        ]
+        type: { in: ['CHAT_DOCTOR', 'DOCTOR_CHAT'] },
+        isCompleted: false,
+        doctorId: { not: null }
       },
       include: {
         doctor: {
@@ -996,7 +991,13 @@ const getChatConsultations = async (req, res) => {
             id: true,
             name: true,
             specialty: true,
-            consultationFee: true
+            consultationFee: true,
+            user: {
+              select: {
+                fullName: true,
+                profilePicture: true
+              }
+            }
           }
         }
       },
@@ -1004,49 +1005,30 @@ const getChatConsultations = async (req, res) => {
     });
 
     const formattedConsultations = consultations.map(consultation => {
-      // Fix: Proper status determination
-      let status = 'WAITING';
-      
-      if (consultation.isCompleted) {
-        status = 'COMPLETED';
-      } else if (consultation.isPaid && consultation.paymentStatus === 'PAID') {
-        status = 'IN_PROGRESS';
-      }
-
-      // Parse chat history safely
-      let messages = [];
-      try {
-        messages = Array.isArray(consultation.chatHistory) ? consultation.chatHistory : [];
-      } catch (e) {
-        console.log('Error parsing chat history:', e);
-        messages = [];
-      }
+      const doctorName = consultation.doctor?.name || 
+                        consultation.doctor?.user?.fullName || 
+                        'Dokter';
+      const specialty = consultation.doctor?.specialty || 'Dokter Umum';
 
       return {
         id: consultation.id,
-        doctorName: consultation.doctor?.name || 'Unknown Doctor',
-        specialty: consultation.doctor?.specialty || 'General',
-        scheduledTime: consultation.createdAt,
-        status: status,
-        isCompleted: consultation.isCompleted, // Add this field
-        queuePosition: 1,
-        estimatedWaitMinutes: status === 'IN_PROGRESS' ? 30 : 120,
-        messages: messages.map((msg, index) => ({
-          id: msg.id || `msg_${index}`,
-          text: msg.text || '',
-          isUser: msg.isUser || false,
-          timestamp: msg.timestamp || consultation.createdAt,
-          isRead: true
-        })),
+        type: consultation.type,
+        doctorName,
+        specialty,
+        scheduledTime: consultation.createdAt.toISOString(),
+        status: 'IN_PROGRESS',
+        queuePosition: 0,
+        estimatedWaitMinutes: 30,
+        messages: consultation.chatHistory || [],
         hasUnreadMessages: false,
-        lastMessageTime: messages.length > 0 ? messages[messages.length - 1].timestamp : null,
-        consultationFee: consultation.consultationFee || consultation.doctor?.consultationFee || 25000,
+        lastMessageTime: consultation.updatedAt?.toISOString(),
+        isCompleted: consultation.isCompleted,
         isPaid: consultation.isPaid,
-        paymentStatus: consultation.paymentStatus
+        paymentStatus: consultation.paymentStatus,
+        createdAt: consultation.createdAt.toISOString(),
+        updatedAt: consultation.updatedAt?.toISOString()
       };
     });
-
-    console.log('✅ Found chat consultations:', formattedConsultations.length);
 
     res.json({
       success: true,
@@ -1054,7 +1036,7 @@ const getChatConsultations = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Get chat consultations error:', error);
+    console.error('Get chat consultations error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get chat consultations',
@@ -1063,24 +1045,29 @@ const getChatConsultations = async (req, res) => {
   }
 };
 
-const sendChatMessage = async (req, res) => {
+const getChatMessages = async (req, res) => {
   try {
-    const { consultationId, message } = req.body;
-    const userId = req.user.id; // Fix: use userId instead of destructured userId
+    const { consultationId } = req.params;
+    const userId = req.user.id;
 
-    console.log('📤 Sending chat message:', { consultationId, userId, message: message.substring(0, 50) + '...' });
-
-    const consultation = await prisma.consultation.findUnique({
-      where: { id: consultationId },
-      include: { 
-        doctor: { 
-          select: { 
-            id: true, 
-            name: true, 
-            userId: true 
-          } 
-        }, 
-        user: true 
+    const consultation = await prisma.consultation.findFirst({
+      where: {
+        id: consultationId,
+        userId: userId
+      },
+      include: {
+        doctor: {
+          select: {
+            id: true,
+            name: true,
+            specialty: true,
+            user: {
+              select: {
+                fullName: true
+              }
+            }
+          }
+        }
       }
     });
 
@@ -1091,16 +1078,76 @@ const sendChatMessage = async (req, res) => {
       });
     }
 
-    // Check authorization
-    const isPatient = consultation.userId === userId;
-    const isDoctor = consultation.doctorId && 
-                    req.user.role === 'DOCTOR' && 
-                    consultation.doctor?.userId === userId;
+    const messages = consultation.chatHistory || [];
+    const formattedMessages = messages.map((msg, index) => ({
+      id: msg.id || `msg_${index}_${Date.now()}`,
+      text: msg.text || '',
+      isUser: msg.isUser === true,
+      timestamp: msg.timestamp || new Date().toISOString(),
+      isRead: true
+    }));
 
-    if (!isPatient && !isDoctor) {
-      return res.status(403).json({
+    res.json({
+      success: true,
+      message: 'Chat messages retrieved',
+      data: { 
+        messages: formattedMessages,
+        consultation: {
+          id: consultation.id,
+          doctorName: consultation.doctor?.name || consultation.doctor?.user?.fullName || 'Dokter',
+          specialty: consultation.doctor?.specialty || 'Dokter Umum',
+          status: consultation.isCompleted ? 'COMPLETED' : 'IN_PROGRESS'
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get chat messages error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get chat messages',
+      error: error.message
+    });
+  }
+};
+
+// ✅ FIXED: Send message with better error handling
+const sendChatMessage = async (req, res) => {
+  try {
+    const { consultationId, message } = req.body;
+    const userId = req.user.id;
+
+    if (!message || message.trim().length === 0) {
+      return res.status(400).json({
         success: false,
-        message: 'Not authorized to send message to this consultation'
+        message: 'Message cannot be empty'
+      });
+    }
+
+    // Find consultation with doctor details
+    const consultation = await prisma.consultation.findFirst({
+      where: {
+        id: consultationId,
+        userId: userId
+      },
+      include: { 
+        doctor: { 
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!consultation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Consultation not found'
       });
     }
 
@@ -1108,7 +1155,7 @@ const sendChatMessage = async (req, res) => {
     const newMessage = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
       text: message.trim(),
-      isUser: isPatient, // true if patient, false if doctor
+      isUser: true,
       timestamp: new Date().toISOString(),
       isRead: true
     };
@@ -1125,40 +1172,35 @@ const sendChatMessage = async (req, res) => {
       }
     });
 
-    // Create notification for the other party
-    if (isPatient && consultation.doctorId) {
-      // Patient sent message, notify doctor
-      await prisma.notification.create({
-        data: {
-          userId: consultation.doctor.userId,
-          title: 'Pesan Baru dari Pasien',
-          message: `Pesan baru dari ${consultation.user.fullName}: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`,
-          type: 'CONSULTATION',
-          priority: 'MEDIUM',
-          relatedData: {
-            consultationId,
-            messageId: newMessage.id
-          }
-        }
-      });
-    } else if (isDoctor) {
-      // Doctor sent message, notify patient
-      await prisma.notification.create({
-        data: {
-          userId: consultation.userId,
-          title: 'Pesan Baru dari Dokter',
-          message: `Dr. ${consultation.doctor.name}: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`,
-          type: 'CONSULTATION',
-          priority: 'HIGH',
-          relatedData: {
-            consultationId,
-            messageId: newMessage.id
-          }
-        }
-      });
-    }
+    // Create notification for doctor - FIXED with proper validation
+    if (consultation.doctor?.user?.id) {
+      try {
+        // Verify doctor user exists before creating notification
+        const doctorUser = await prisma.user.findUnique({
+          where: { id: consultation.doctor.user.id }
+        });
 
-    console.log('✅ Message sent successfully:', newMessage.id);
+        if (doctorUser) {
+          await prisma.notification.create({
+            data: {
+              userId: doctorUser.id,
+              title: 'Pesan Chat Baru',
+              message: `Pasien mengirim pesan: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`,
+              type: 'CONSULTATION',
+              priority: 'MEDIUM',
+              relatedData: {
+                consultationId,
+                messageId: newMessage.id,
+                patientName: req.user.fullName || 'Pasien'
+              }
+            }
+          });
+        }
+      } catch (notificationError) {
+        console.error('Failed to create notification:', notificationError.message);
+        // Don't fail the main operation if notification fails
+      }
+    }
 
     res.json({
       success: true,
@@ -1174,74 +1216,10 @@ const sendChatMessage = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Send chat message error:', error);
+    console.error('Send chat message error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to send message',
-      error: error.message
-    });
-  }
-};
-
-const getChatMessages = async (req, res) => {
-  try {
-    const { consultationId } = req.params;
-    const userId = req.user.id;
-
-    console.log('💬 Getting chat messages:', { consultationId, userId });
-
-    const consultation = await prisma.consultation.findUnique({
-      where: { id: consultationId },
-      include: {
-        doctor: {
-          select: {
-            id: true,
-            name: true,
-            specialty: true
-          }
-        }
-      }
-    });
-
-    if (!consultation) {
-      return res.status(404).json({
-        success: false,
-        message: 'Consultation not found'
-      });
-    }
-
-    // Fix: Allow access if user owns the consultation OR is the assigned doctor
-    const isAuthorized = consultation.userId === userId || 
-                        (consultation.doctorId && req.user.role === 'DOCTOR' && consultation.doctor?.userId === userId);
-
-    if (!isAuthorized) {
-      console.log('❌ Authorization failed:', { 
-        consultationUserId: consultation.userId, 
-        requestUserId: userId,
-        userRole: req.user.role 
-      });
-      
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to view this consultation'
-      });
-    }
-
-    const messages = consultation.chatHistory || [];
-
-    console.log('✅ Chat messages retrieved:', messages.length);
-
-    res.json({
-      success: true,
-      message: 'Chat messages retrieved',
-      data: { messages }
-    });
-
-  } catch (error) {
-    console.error('❌ Get chat messages error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get chat messages',
       error: error.message
     });
   }
