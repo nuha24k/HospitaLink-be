@@ -76,6 +76,7 @@ const mobileNotificationRoutes = require('./routes/mobile/notificationRoute');
 const medicalHistoryRoutes = require('./routes/mobile/medicalHistoryRoute');
 const qrRoutes = require('./routes/mobile/qrRoute');
 const prescriptionRoutes = require('./routes/mobile/prescriptionRoute');
+const transactionController = require('./controllers/transactionController');
 
 // API Routes (Mobile) - Add transaction routes
 app.use('/api/auth', authRoutes);
@@ -95,6 +96,11 @@ app.use('/api/mobile/transactions', mobileTransactionRoutes);
 // Legacy routes for backward compatibility
 app.use('/api/medical-records', medicalHistoryRoutes);
 app.use('/api/prescriptions', prescriptionRoutes);
+
+// web hooks midtrans
+app.post('/api/midtrans/notification', transactionController.handleMidtransNotification);
+app.post('/api/transactions/midtrans/notification', transactionController.handleMidtransNotification);
+app.post('/api/mobile/transactions/midtrans/notification', transactionController.handleMidtransNotification);
 
 // Web Routes (Dashboard) - Add logging
 app.use('/api/web/doctor', (req, res, next) => {

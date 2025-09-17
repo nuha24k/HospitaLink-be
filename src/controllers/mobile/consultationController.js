@@ -364,7 +364,10 @@ const requestDoctorChat = async (req, res) => {
     // Get consultation
     const consultation = await prisma.consultation.findUnique({
       where: { id: consultationId },
-      include: { user: true }
+      include: { 
+        user: true,
+        doctor: { select: { name: true, specialty: true } }
+      }
     });
 
     if (!consultation) {
@@ -376,14 +379,32 @@ const requestDoctorChat = async (req, res) => {
 
     // Check if payment is needed
     if (consultation.consultationFee > 0 && consultation.paymentStatus !== 'PAID') {
-      // For demo, we'll mark as paid. In production, integrate with payment gateway
+      // ✅ NEW: Create transaction record
+      const transaction = await prisma.transaction.create({
+        data: {
+          userId: consultation.userId,
+          type: 'CONSULTATION_PAYMENT',
+          status: 'PAID', // For MVP, assume immediate payment
+          amount: consultation.consultationFee,
+          paymentMethod: paymentMethod.toUpperCase(),
+          description: `Online consultation fee with Dr. ${consultation.doctor?.name}`,
+          consultationId,
+          paidAt: new Date()
+        }
+      });
+
+      // Update consultation payment status
       await prisma.consultation.update({
         where: { id: consultationId },
         data: { 
+          isPaid: true,
+          paidAt: new Date(),
           paymentStatus: 'PAID',
           paymentMethod: paymentMethod 
         }
       });
+
+      console.log('💳 Transaction created for consultation:', transaction.id);
     }
 
     // Find available doctor for chat consultation
@@ -805,8 +826,8 @@ const getAvailableTimeSlots = async (req, res) => {
 
 const bookChatConsultation = async (req, res) => {
   try {
-    const { userId } = req.user;
-    const { slotId, scheduledTime, notes } = req.body;
+    const userId = req.user.id;
+    const { slotId, scheduledTime, notes, paymentMethod = 'CREDIT_CARD' } = req.body;
 
     console.log('📅 Booking chat consultation:', { userId, slotId, scheduledTime });
 
@@ -853,6 +874,8 @@ const bookChatConsultation = async (req, res) => {
       });
     }
 
+    const consultationFee = 15000;
+
     // Create chat consultation
     const consultation = await prisma.consultation.create({
       data: {
@@ -870,8 +893,33 @@ const bookChatConsultation = async (req, res) => {
             timestamp: new Date().toISOString()
           }
         ],
-        consultationFee: 15000,
-        paymentStatus: 'PENDING'
+        consultationFee,
+        paymentStatus: 'PENDING',
+        isPaid: false
+      }
+    });
+
+    // ✅ NEW: Create transaction for consultation fee
+    const transaction = await prisma.transaction.create({
+      data: {
+        userId,
+        type: 'CONSULTATION_PAYMENT',
+        status: 'PAID', // For MVP, assume immediate payment
+        amount: consultationFee,
+        paymentMethod: paymentMethod.toUpperCase(),
+        description: `Chat consultation fee with Dr. ${availableDoctor.name}`,
+        consultationId: consultation.id,
+        paidAt: new Date()
+      }
+    });
+
+    // Update consultation as paid
+    await prisma.consultation.update({
+      where: { id: consultation.id },
+      data: {
+        isPaid: true,
+        paidAt: new Date(),
+        paymentStatus: 'PAID'
       }
     });
 
@@ -897,7 +945,15 @@ const bookChatConsultation = async (req, res) => {
       estimatedWaitMinutes: (existingCount + 1) * 15,
       messages: consultation.chatHistory || [],
       hasUnreadMessages: false,
-      lastMessageTime: null
+      lastMessageTime: null,
+      // ✅ ADD: Payment info
+      paymentInfo: {
+        transactionId: transaction.id,
+        amount: consultationFee,
+        paymentMethod,
+        paidAt: transaction.paidAt,
+        status: 'PAID'
+      }
     };
 
     console.log('✅ Chat consultation booked:', consultation.id);
@@ -924,18 +980,23 @@ const getChatConsultations = async (req, res) => {
     
     console.log('💬 Getting chat consultations for user:', userId);
     
-    // Fix: Query yang lebih sederhana
+    // Query consultations yang berbasis chat dengan dokter UNTUK USER INI
     const consultations = await prisma.consultation.findMany({
       where: {
-        userId,
-        type: 'CHAT_DOCTOR'
+        userId: userId,
+        type: 'CHAT_DOCTOR',
+        OR: [
+          { isPaid: true },
+          { paymentStatus: 'PAID' }
+        ]
       },
       include: {
         doctor: {
           select: {
             id: true,
             name: true,
-            specialty: true
+            specialty: true,
+            consultationFee: true
           }
         }
       },
@@ -943,31 +1004,45 @@ const getChatConsultations = async (req, res) => {
     });
 
     const formattedConsultations = consultations.map(consultation => {
-      const chatHistory = consultation.chatHistory || [];
-      const lastMessage = Array.isArray(chatHistory) && chatHistory.length > 0 ? 
-        chatHistory[chatHistory.length - 1] : null;
+      // Fix: Proper status determination
+      let status = 'WAITING';
       
+      if (consultation.isCompleted) {
+        status = 'COMPLETED';
+      } else if (consultation.isPaid && consultation.paymentStatus === 'PAID') {
+        status = 'IN_PROGRESS';
+      }
+
+      // Parse chat history safely
+      let messages = [];
+      try {
+        messages = Array.isArray(consultation.chatHistory) ? consultation.chatHistory : [];
+      } catch (e) {
+        console.log('Error parsing chat history:', e);
+        messages = [];
+      }
+
       return {
         id: consultation.id,
-        doctorName: consultation.doctor?.name || 'Dokter Umum',
-        specialty: consultation.doctor?.specialty || 'Dokter Umum',
-        scheduledTime: consultation.followUpDate || consultation.createdAt, // Use available field
-        status: consultation.isCompleted ? 'completed' : 
-                consultation.recommendation === 'CANCELLED' ? 'cancelled' :
-                chatHistory.length > 0 ? 'inProgress' : 'waiting',
-        queuePosition: 0,
-        estimatedWaitMinutes: 0,
-        messages: Array.isArray(chatHistory) ? chatHistory.map(msg => ({
-          id: msg.id || Date.now().toString(),
-          text: msg.message || msg.text || '',
-          isUser: msg.sender === 'USER' || msg.isUser === true,
-          timestamp: msg.timestamp || new Date(),
-          isRead: msg.isRead !== false
-        })) : [],
-        hasUnreadMessages: Array.isArray(chatHistory) ? chatHistory.some(msg => 
-          (msg.sender === 'DOCTOR' || msg.isUser === false) && msg.isRead === false
-        ) : false,
-        lastMessageTime: lastMessage?.timestamp ? new Date(lastMessage.timestamp) : null
+        doctorName: consultation.doctor?.name || 'Unknown Doctor',
+        specialty: consultation.doctor?.specialty || 'General',
+        scheduledTime: consultation.createdAt,
+        status: status,
+        isCompleted: consultation.isCompleted, // Add this field
+        queuePosition: 1,
+        estimatedWaitMinutes: status === 'IN_PROGRESS' ? 30 : 120,
+        messages: messages.map((msg, index) => ({
+          id: msg.id || `msg_${index}`,
+          text: msg.text || '',
+          isUser: msg.isUser || false,
+          timestamp: msg.timestamp || consultation.createdAt,
+          isRead: true
+        })),
+        hasUnreadMessages: false,
+        lastMessageTime: messages.length > 0 ? messages[messages.length - 1].timestamp : null,
+        consultationFee: consultation.consultationFee || consultation.doctor?.consultationFee || 25000,
+        isPaid: consultation.isPaid,
+        paymentStatus: consultation.paymentStatus
       };
     });
 
@@ -1066,10 +1141,21 @@ const sendChatMessage = async (req, res) => {
 const getChatMessages = async (req, res) => {
   try {
     const { consultationId } = req.params;
-    const { userId } = req.user;
+    const userId = req.user.id;
+
+    console.log('💬 Getting chat messages:', { consultationId, userId });
 
     const consultation = await prisma.consultation.findUnique({
-      where: { id: consultationId }
+      where: { id: consultationId },
+      include: {
+        doctor: {
+          select: {
+            id: true,
+            name: true,
+            specialty: true
+          }
+        }
+      }
     });
 
     if (!consultation) {
@@ -1079,7 +1165,17 @@ const getChatMessages = async (req, res) => {
       });
     }
 
-    if (consultation.userId !== userId) {
+    // Fix: Allow access if user owns the consultation OR is the assigned doctor
+    const isAuthorized = consultation.userId === userId || 
+                        (consultation.doctorId && req.user.role === 'DOCTOR' && consultation.doctor?.userId === userId);
+
+    if (!isAuthorized) {
+      console.log('❌ Authorization failed:', { 
+        consultationUserId: consultation.userId, 
+        requestUserId: userId,
+        userRole: req.user.role 
+      });
+      
       return res.status(403).json({
         success: false,
         message: 'Not authorized to view this consultation'
@@ -1088,6 +1184,8 @@ const getChatMessages = async (req, res) => {
 
     const messages = consultation.chatHistory || [];
 
+    console.log('✅ Chat messages retrieved:', messages.length);
+
     res.json({
       success: true,
       message: 'Chat messages retrieved',
@@ -1095,7 +1193,7 @@ const getChatMessages = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get chat messages error:', error);
+    console.error('❌ Get chat messages error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get chat messages',
@@ -1104,6 +1202,7 @@ const getChatMessages = async (req, res) => {
   }
 };
 
+// Accept early consultation slot (Doctor or User)
 const acceptEarlyConsultation = async (req, res) => {
   try {
     const { consultationId } = req.body;
@@ -1700,6 +1799,238 @@ async function getQueuePosition(date) {
   return count + 1;
 }
 
+// NEW: Get Available Doctors (General Practitioners)
+const getAvailableDoctors = async (req, res) => {
+  try {
+    // Query dengan field yang lebih spesifik
+    const doctors = await prisma.doctor.findMany({
+      where: {
+        isAvailable: true,
+        user: { isActive: true },
+        OR: [
+          { specialty: { contains: 'Umum' } },
+          { specialty: { contains: 'umum' } },
+          { specialty: { contains: 'General' } },
+          { specialty: { contains: 'general' } }
+        ]
+      },
+      select: {
+        id: true,
+        name: true,
+        specialty: true,
+        consultationFee: true,
+        isAvailable: true,
+        isOnDuty: true,
+        bio: true,
+        user: {
+          select: {
+            fullName: true,
+            profilePicture: true
+          }
+        }
+      },
+      orderBy: [
+        { isOnDuty: 'desc' },
+        { consultationFee: 'asc' },
+        { name: 'asc' }
+      ]
+    });
+
+    console.log('Raw doctors from DB:', doctors);
+
+    const formattedDoctors = doctors.map(doctor => {
+      // Ensure fee is not null or 0
+      const fee = doctor.consultationFee || 25000;
+      
+      console.log(`Doctor ${doctor.name}: original fee = ${doctor.consultationFee}, formatted fee = ${fee}`);
+      
+      return {
+        id: doctor.id,
+        name: doctor.name,
+        specialty: doctor.specialty,
+        hospital: 'RS Mitra Keluarga',
+        rating: 4.5 + Math.random() * 0.5,
+        experience: `${Math.floor(Math.random() * 10) + 5} tahun pengalaman`,
+        photoUrl: doctor.user?.profilePicture,
+        consultationFee: fee,
+        isAvailable: doctor.isAvailable && doctor.isOnDuty,
+        description: doctor.bio || `Dokter ${doctor.specialty} berpengalaman`
+      };
+    });
+
+    console.log('Formatted doctors response:', formattedDoctors);
+
+    res.json({
+      success: true,
+      message: 'Available doctors retrieved',
+      data: { doctors: formattedDoctors }
+    });
+
+  } catch (error) {
+    console.error('Get available doctors error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get available doctors',
+      error: error.message
+    });
+  }
+};
+
+const startDirectConsultation = async (req, res) => {
+  try {
+    const { userId, doctorId, symptoms, notes } = req.body;
+
+    console.log('Starting direct consultation:', { userId, doctorId, symptoms });
+
+    const doctor = await prisma.doctor.findFirst({
+      where: {
+        id: doctorId,
+        isAvailable: true,
+        user: { isActive: true }
+      },
+      include: {
+        user: { select: { fullName: true } }
+      }
+    });
+
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Doctor not available'
+      });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const existingConsultation = await prisma.consultation.findFirst({
+      where: {
+        userId,
+        doctorId,
+        createdAt: {
+          gte: today,
+          lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+        },
+        isCompleted: false
+      }
+    });
+
+    if (existingConsultation) {
+      return res.status(400).json({
+        success: false,
+        message: 'You already have an active consultation with this doctor today'
+      });
+    }
+
+    const consultationFee = doctor.consultationFee || 25000;
+
+    // Create consultation with auto-paid status
+    const consultation = await prisma.consultation.create({
+      data: {
+        userId,
+        doctorId,
+        type: 'CHAT_DOCTOR',
+        severity: 'MEDIUM',
+        urgency: 'NORMAL',
+        symptoms: Array.isArray(symptoms) ? symptoms : [symptoms],
+        chatHistory: [
+          {
+            id: `initial_${Date.now()}`,
+            text: `Konsultasi langsung dimulai. Gejala: ${Array.isArray(symptoms) ? symptoms.join(', ') : symptoms}${notes ? `. Catatan: ${notes}` : ''}`,
+            isUser: false,
+            timestamp: new Date().toISOString()
+          }
+        ],
+        consultationFee,
+        paymentStatus: 'PAID',
+        paymentMethod: 'CASH',
+        isPaid: true,
+        paidAt: new Date()
+      }
+    });
+
+    // Create transaction record
+    await prisma.transaction.create({
+      data: {
+        userId,
+        type: 'CONSULTATION_PAYMENT',
+        status: 'PAID',
+        amount: consultationFee,
+        paymentMethod: 'CASH',
+        description: `Direct consultation with ${doctor.name}`,
+        consultationId: consultation.id,
+        paidAt: new Date()
+      }
+    });
+
+    const queueNumber = await generateQueueNumber(today);
+    const position = await getQueuePosition(today);
+
+    await prisma.queue.create({
+      data: {
+        userId,
+        doctorId,
+        consultationId: consultation.id,
+        queueNumber,
+        queueType: 'DIRECT_CONSULTATION',
+        position,
+        queueDate: today,
+        checkInTime: new Date(),
+        estimatedWaitTime: position * 15,
+        notes: `Direct consultation: ${Array.isArray(symptoms) ? symptoms.join(', ') : symptoms}`
+      }
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId,
+        title: 'Konsultasi Langsung Berhasil',
+        message: `Konsultasi dengan ${doctor.name} telah dimulai. Chat sudah siap dan dokter akan merespons dalam 1-4 jam.`,
+        type: 'CONSULTATION',
+        priority: 'MEDIUM'
+      }
+    });
+
+    const result = {
+      consultationId: consultation.id,
+      doctor: {
+        id: doctor.id,
+        name: doctor.name,
+        specialty: doctor.specialty,
+        hospital: 'RS Mitra Keluarga',
+        consultationFee,
+        photoUrl: doctor.user?.profilePicture
+      },
+      consultationFee,
+      queueNumber,
+      position,
+      estimatedWaitMinutes: position * 15,
+      status: 'PAID',
+      scheduledTime: new Date().toISOString(),
+      paymentStatus: 'PAID',
+      isPaid: true,
+      paidAt: new Date().toISOString()
+    };
+
+    console.log('✅ Direct consultation created and auto-paid:', consultation.id);
+
+    res.json({
+      success: true,
+      message: 'Direct consultation started successfully',
+      data: result
+    });
+
+  } catch (error) {
+    console.error('❌ Start direct consultation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to start direct consultation',
+      error: error.message
+    });
+  }
+};
+
+// Update the module.exports section at the end:
 module.exports = {
   aiScreening,
   requestDoctorChat,
@@ -1724,7 +2055,11 @@ module.exports = {
   markConsultationCompleted,
   getConsultationDetails,
   
-  // Keep old names for backward compatibility
+  // NEW exports - now defined above
+  getAvailableDoctors,
+  startDirectConsultation,
+  
+  // Backward compatibility
   requestDoctorConsultation: requestDoctorChat,
   completeDoctorConsultation: completeDoctorChat,
   bookAppointment: bookAppointmentFromConsultation

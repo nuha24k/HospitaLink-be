@@ -218,6 +218,7 @@ model Transaction {
   // Relations
   prescriptionId    String?            @unique
   consultationId    String?            @unique
+  orderId          String?
   
   // References
   user              User               @relation(fields: [userId], references: [id])

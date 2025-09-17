@@ -184,4 +184,20 @@ router.post('/cancel', authMiddleware, consultationController.cancelConsultation
 // Reschedule consultation
 router.post('/reschedule', authMiddleware, consultationController.rescheduleConsultation);
 
+// NEW: Get available doctors
+router.get('/available-doctors', 
+  authMiddleware,
+  consultationController.getAvailableDoctors
+);
+
+// NEW: Start direct consultation
+router.post('/start-direct', 
+  authMiddleware,
+  body('doctorId').isUUID().withMessage('Valid doctor ID is required'),
+  body('symptoms').isArray({ min: 1 }).withMessage('Symptoms are required'),
+  body('notes').optional().isString().withMessage('Notes must be a string'), // Fix: add isString()
+  handleValidationErrors,
+  consultationController.startDirectConsultation
+);
+
 module.exports = router;

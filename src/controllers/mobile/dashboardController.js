@@ -204,6 +204,50 @@ class DashboardController {
         };
       }
 
+      // Get transaction summary
+      const [recentTransactions, pendingPayments, totalSpent] = await Promise.all([
+        // Recent transactions (last 5)
+        prisma.transaction.findMany({
+          where: { userId },
+          include: {
+            prescription: {
+              select: { prescriptionCode: true }
+            },
+            consultation: {
+              include: {
+                doctor: {
+                  select: { name: true }
+                }
+              }
+            }
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 5
+        }),
+
+        // Pending payments count
+        Promise.all([
+          prisma.prescription.count({
+            where: { userId, isPaid: false, totalAmount: { gt: 0 } }
+          }),
+          prisma.consultation.count({
+            where: { userId, isPaid: false, consultationFee: { gt: 0 } }
+          })
+        ]),
+
+        // Total amount spent this month
+        prisma.transaction.aggregate({
+          where: {
+            userId,
+            status: 'PAID',
+            createdAt: {
+              gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+            }
+          },
+          _sum: { amount: true }
+        })
+      ]);
+
       // Format response
       const dashboardData = {
         user: {
@@ -248,11 +292,37 @@ class DashboardController {
         notifications: {
           unreadCount: unreadNotifications
         },
+        // Transaction summary
+        financialSummary: {
+          recentTransactions: recentTransactions.map(tx => ({
+            id: tx.id,
+            type: tx.type,
+            amount: tx.amount,
+            status: tx.status,
+            paymentMethod: tx.paymentMethod,
+            description: tx.description,
+            createdAt: tx.createdAt,
+            relatedItem: tx.prescription ? 
+              `Resep ${tx.prescription.prescriptionCode}` :
+              tx.consultation ? 
+                `Konsultasi dengan Dr. ${tx.consultation.doctor?.name}` :
+                'Pembayaran lainnya'
+          })),
+          pendingPayments: {
+            prescriptions: pendingPayments[0],
+            consultations: pendingPayments[1],
+            total: pendingPayments[0] + pendingPayments[1]
+          },
+          monthlySpent: totalSpent._sum.amount || 0
+        },
         stats: {
           totalConsultations: recentConsultations.length,
           totalPrescriptions: recentPrescriptions.length,
           pendingLabResults: pendingLabResults.length,
-          upcomingAppointments: upcomingAppointments.length
+          upcomingAppointments: upcomingAppointments.length,
+          // Financial stats
+          pendingPayments: pendingPayments[0] + pendingPayments[1],
+          monthlySpent: totalSpent._sum.amount || 0
         }
       };
 
